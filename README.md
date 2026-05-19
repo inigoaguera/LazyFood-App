@@ -1,34 +1,34 @@
 # LazyFood 🥑
 
-PWA familiar para gestionar la nevera, recetas, lista de la compra y gastos del super, con un puñado de funciones de IA encima (Gemini 2.5 Flash). Multi-hogar: cada "casa" es un grupo de personas que comparten nevera, recetas y plan semanal.
+Family PWA for managing the fridge, recipes, shopping list, and grocery expenses, with a handful of AI features on top (Gemini 2.5 Flash). Multi-household: each "house" is a group of people sharing fridge, recipes, and weekly meal plan.
 
-App en producción: https://lazyfood.pages.dev
+Production app: https://lazyfood.pages.dev
 
 ## Stack
 
-- **Frontend**: React 18, Vite, `vite-plugin-pwa` (Workbox), Dexie.js (IndexedDB) como cache local, CSS inline sin framework.
-- **Backend**: Cloudflare Worker (`backend/src/index.js`) con **D1** (SQLite serverless) como fuente de verdad.
-- **Auth**: magic-link **+ OTP de 6 dígitos** vía Brevo (sender single-verified). JWT HS256 con doble storage (IndexedDB + localStorage) para sobrevivir el reciclado de almacenamiento de iOS PWA.
-- **IA**: Google Gemini 2.5 Flash a través del Worker (la API key nunca toca el frontend).
-- **Hosting**: Cloudflare Pages (frontend) + Workers (backend) + D1 (datos).
+- **Frontend**: React 18, Vite, `vite-plugin-pwa` (Workbox), Dexie.js (IndexedDB) as local cache, inline CSS, no framework.
+- **Backend**: Cloudflare Worker (`backend/src/index.js`) with **D1** (serverless SQLite) as source of truth.
+- **Auth**: magic-link **+ 6-digit OTP** via Brevo (single-sender verified). JWT HS256 with dual storage (IndexedDB + localStorage) to survive iOS PWA storage eviction.
+- **AI**: Google Gemini 2.5 Flash via the Worker (the API key never reaches the frontend).
+- **Hosting**: Cloudflare Pages (frontend) + Workers (backend) + D1 (data).
 
-## Arquitectura de datos
+## Data architecture
 
-Cloud-first con cache local. **D1 es la fuente de verdad**, IndexedDB es cache de UI y settings.
+Cloud-first with local cache. **D1 is the source of truth**, IndexedDB is UI cache and settings.
 
-Todos los datos de dominio están **scoped por household** (casa). Un usuario puede pertenecer a 0..N casas. Tablas principales:
+All domain data is **scoped per household**. A user can belong to 0..N households. Main tables:
 
 - `users`, `sessions`, `memberships`, `invites`, `auth_tokens` (magic + OTP)
 - `households`
-- `items` (inventario, con `expires_at` / `frozen_at` / `opened_at`)
-- `recipes` + `recipe_details` (ingredientes y pasos en JSON)
-- `shopping`, `expenses` (con `items_json` y `photo_url` reservado para R2)
-- `menu_plan` (planificador semanal)
-- `categories` (12 defaults + custom por casa)
+- `items` (inventory, with `expires_at` / `frozen_at` / `opened_at`)
+- `recipes` + `recipe_details` (ingredients and steps as JSON)
+- `shopping`, `expenses` (with `items_json` and `photo_url` reserved for R2)
+- `menu_plan` (weekly planner)
+- `categories` (12 defaults + custom per household)
 
-Toda mutación pasa por la API; la cache local se refresca tras éxito. Sync por deltas (`?since=`) en focus.
+Every mutation goes through the API; local cache refreshes on success. Delta sync (`?since=`) on focus.
 
-## Estructura
+## Structure
 
 ```
 lazyfood/
@@ -38,8 +38,8 @@ lazyfood/
 ├── src/
 │   ├── main.jsx · App.jsx
 │   ├── api/ (auth, sync, items, recipes, expenses, shopping, ai…)
-│   ├── db.js (Dexie, esquema v5)
-│   ├── tokens/ (palettes, fonts, categories defaults)
+│   ├── db.js (Dexie, schema v5)
+│   ├── tokens/ (palettes, fonts, default categories)
 │   ├── components/ (ctx, base, sheets…)
 │   ├── icons/LFIcon.jsx
 │   ├── util/ (expires, fractions, useCategories…)
@@ -53,59 +53,59 @@ lazyfood/
 └── backend/
     ├── src/index.js (router + handlers)
     ├── migrations/00XX_*.sql
-    ├── wrangler.toml.example  (copia a wrangler.toml y rellena database_id)
+    ├── wrangler.toml.example  (copy to wrangler.toml and fill in database_id)
     └── package.json
 ```
 
-## Funcionalidades
+## Features
 
 ### Core
-- **Inventario** con cantidades fraccionarias (0.25 latas, 0.5 huevos), categorías custom, mover entre estados (despensa, congelador, lista compra) con sheet.
-- **Caducidad inteligente**: `expires_at` (absoluto) + `frozen_at` (pausa contador) + `opened_at` (arranca contador en conservas).
-- **Recetas** con editor completo, ingredientes vinculables a items del inventario (fallback a fuzzy-match), instrumentos a fregar (`tools`), 29 imágenes preset.
-- **Lista de la compra** con multiplicadores, swipe-eliminar, vaciar carro.
-- **Gastos** con calendario mensual, editor manual, chips de breakdown por categoría.
-- **Menú semanal** planificable a mano o por IA.
-- **Multi-hogar**: crear casa, invitar (link con token corto), aceptar, expulsar, borrar, cambiar de casa.
+- **Inventory** with fractional quantities (0.25 cans, 0.5 eggs), custom categories, move between states (pantry, freezer, shopping list) via sheet.
+- **Smart expiry**: `expires_at` (absolute) + `frozen_at` (pauses countdown) + `opened_at` (starts countdown for preserves).
+- **Recipes** with a full editor, ingredients linkable to inventory items (fuzzy-match fallback), cleanup-effort tools (`tools`), 29 preset images.
+- **Shopping list** with multipliers, swipe-delete, clear cart.
+- **Expenses** with monthly calendar, manual editor, per-category breakdown chips.
+- **Weekly menu** planned manually or by AI.
+- **Multi-household**: create house, invite (short-token link), accept, remove members, delete, switch houses.
 
-### IA (todas vía Worker → Gemini 2.5 Flash, JSON estructurado)
+### AI (all via Worker → Gemini 2.5 Flash, structured JSON)
 
-| Feature | Cómo se invoca |
+| Feature | How to trigger |
 |---|---|
-| Antojos chat (chat persistido por casa) | Recetas → "¿Antojos?" |
-| Inspírame (5 sugerencias × 3 secciones, con × para regenerar) | Recetas → Inspírame |
-| Scanner de tickets (visión, `inlineData`) | Botón central de la nav |
-| Auto-planificar menú semanal | Menú → ✨ |
-| Reajustar raciones (escalado lineal + IA) | Receta → "Reajustar" |
-| Úsalos ya (recetas guardadas + IA con ítem caducando) | Tap en item caducando |
+| Cravings chat (chat persisted per household) | Recipes → "¿Antojos?" |
+| Inspírame (5 suggestions × 3 sections, with × to regenerate) | Recipes → Inspírame |
+| Receipt scanner (vision, `inlineData`) | Center nav button |
+| Auto-plan weekly menu | Menu → ✨ |
+| Rescale servings (linear + AI) | Recipe → "Reajustar" |
+| Use them now (saved recipes + AI for expiring item) | Tap on expiring item |
 
-## Configurar el frontend
+## Frontend setup
 
 ```bash
 cd lazyfood
 npm install
 cp .env.example .env
-# Edita .env y pon la URL del Worker desplegado
+# Edit .env and set the deployed Worker URL
 npm run dev
 ```
 
-Build y deploy:
+Build and deploy:
 
 ```bash
 npm run build
 npx wrangler pages deploy dist --project-name lazyfood --branch=production
 ```
 
-Regenerar iconos PWA:
+Regenerate PWA icons:
 
 ```bash
 npm run icons
 ```
 
-## Configurar el backend (Cloudflare Worker + D1)
+## Backend setup (Cloudflare Worker + D1)
 
-1. Instala Wrangler si no lo tienes: `npm i -g wrangler`
-2. Login y prepara el worker:
+1. Install Wrangler if you don't have it: `npm i -g wrangler`
+2. Log in and prepare the worker:
 
    ```bash
    cd backend
@@ -113,79 +113,79 @@ npm run icons
    wrangler login
    ```
 
-3. Copia el template de configuración:
+3. Copy the config template:
 
    ```bash
    cp wrangler.toml.example wrangler.toml
    ```
 
-4. Crea la base de datos D1 y pega el `database_id` que devuelve en tu `wrangler.toml`:
+4. Create the D1 database and paste the returned `database_id` into your `wrangler.toml`:
 
    ```bash
    wrangler d1 create lazyfood-db
    ```
 
-5. Aplica las migraciones (en orden):
+5. Apply migrations (in order):
 
    ```bash
    wrangler d1 execute lazyfood-db --file=./migrations/0001_initial.sql --remote
-   # …y el resto de migrations/*.sql
+   # …and the rest of migrations/*.sql
    ```
 
-6. Carga los secrets (no se versionan):
+6. Load the secrets (not versioned):
 
    ```bash
-   wrangler secret put GEMINI_API_KEY         # API key de Google AI Studio
+   wrangler secret put GEMINI_API_KEY         # Google AI Studio API key
    wrangler secret put JWT_SECRET             # 32+ bytes random base64
-   wrangler secret put BREVO_API_KEY          # xkeysib-... de brevo.com
-   wrangler secret put RESEND_FROM_EMAIL      # email verificado en Brevo (single sender)
+   wrangler secret put BREVO_API_KEY          # xkeysib-... from brevo.com
+   wrangler secret put RESEND_FROM_EMAIL      # Brevo-verified email (single sender)
    ```
 
-7. Ajusta `ALLOWED_ORIGIN` y `APP_URL` en `wrangler.toml` al dominio real de tu PWA.
+7. Adjust `ALLOWED_ORIGIN` and `APP_URL` in `wrangler.toml` to your real PWA domain.
 
-8. Despliega:
+8. Deploy:
 
    ```bash
    wrangler deploy
    ```
 
-9. Pega la URL del Worker en el `.env` del frontend:
+9. Paste the Worker URL into the frontend `.env`:
 
    ```
-   VITE_API_PROXY_URL=https://lazyfood-api.<tu-subdominio>.workers.dev
+   VITE_API_PROXY_URL=https://lazyfood-api.<your-subdomain>.workers.dev
    ```
 
-## Auth: por qué OTP además de magic link
+## Auth: why OTP on top of magic link
 
-Los magic links en iOS abren **siempre en Safari**, nunca en la PWA standalone. Eso rompe la sesión: el JWT se guarda en el storage de Safari, no en el de la app instalada. Para evitarlo, el email incluye además un **código de 6 dígitos** que el usuario teclea dentro de la PWA → la sesión queda guardada en el contexto correcto.
+Magic links on iOS **always open in Safari**, never in the standalone PWA. That breaks the session: the JWT lands in Safari's storage, not in the installed app's. To work around this, the email also includes a **6-digit code** the user types inside the PWA → session is saved in the correct context.
 
-JWT se guarda en IndexedDB **y** en localStorage como fallback, porque iOS recicla agresivamente el storage de las PWAs.
+JWT is stored in IndexedDB **and** localStorage as a fallback, because iOS aggressively evicts PWA storage.
 
-## Diseño
+## Design
 
-- 3 paletas (Huerto, Menta, Terracota) × 3 tipografías (Playful, Clean, Rounded). Default: **Huerto + Playful** (Fraunces + DM Sans). Se cambian desde Perfil.
-- Safe-area iOS (`env(safe-area-inset-*)`), animaciones `slideUp`/`fadeIn`, haptics (`navigator.vibrate(10)`).
+- 3 palettes (Huerto, Menta, Terracota) × 3 typefaces (Playful, Clean, Rounded). Default: **Huerto + Playful** (Fraunces + DM Sans). Switchable from Profile.
+- iOS safe-area (`env(safe-area-inset-*)`), `slideUp`/`fadeIn` animations, haptics (`navigator.vibrate(10)`).
 
 ## Debug
 
-- `?debug=1` activa overlay persistente.
-- Gesto: 7 toques sobre el aguacate → toggle overlay.
-- [Eruda](https://github.com/liriliri/eruda) embebido para consola en móvil cuando el overlay está activo.
+- `?debug=1` enables a persistent overlay.
+- Gesture: 7 taps on the avocado → toggle overlay.
+- [Eruda](https://github.com/liriliri/eruda) embedded for a mobile console when the overlay is on.
 
-## Seguridad
+## Security
 
-- API key de Gemini, JWT secret y API key de Brevo viven **sólo** como Wrangler secrets.
-- El Worker valida CORS contra `ALLOWED_ORIGIN`, valida modelos permitidos y firma/verifica JWTs HS256.
-- El frontend nunca llama a Google/Brevo directamente.
+- Gemini API key, JWT secret, and Brevo API key live **only** as Wrangler secrets.
+- The Worker validates CORS against `ALLOWED_ORIGIN`, validates allowed models, and signs/verifies HS256 JWTs.
+- The frontend never calls Google/Brevo directly.
 
-## Pendientes conocidos
+## Known pending work
 
-- Subida de foto de ticket a R2 (la columna `photo_url` ya existe).
-- Promover miembro de casa a owner.
-- UI para revocar invitaciones/sesiones.
-- Push notifications de caducidad.
-- Tags semánticos en recetas (vegetariano, ligero, sin gluten, momento del día).
+- Receipt photo upload to R2 (the `photo_url` column already exists).
+- Promote a member to owner.
+- UI to revoke invitations/sessions.
+- Push notifications for expiring items.
+- Semantic tags on recipes (vegetarian, light, gluten-free, time of day).
 
-## Licencia
+## License
 
-MIT — úsalo, fórketelo, modifícalo.
+MIT — use it, fork it, modify it.
