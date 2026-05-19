@@ -7,12 +7,15 @@ compatibility_date = "2025-01-01"
 #   wrangler secret put JWT_SECRET           (32+ bytes random base64)
 #   wrangler secret put BREVO_API_KEY        (xkeysib-... de brevo.com)
 #   wrangler secret put RESEND_FROM_EMAIL    (email verificado como single sender en Brevo)
+#   wrangler d1 create lazyfood-db           (copia el database_id que devuelve)
 #   wrangler d1 execute lazyfood-db --file=./migrations/0001_initial.sql --remote
 #   wrangler deploy
+#
+# Copia este fichero a `wrangler.toml` y rellena database_id con el ID real.
 
 [vars]
-ALLOWED_ORIGIN = "https://lazyfood.pages.dev"
-APP_URL = "https://lazyfood.pages.dev"
+ALLOWED_ORIGIN = "https://tu-pwa.pages.dev"
+APP_URL = "https://tu-pwa.pages.dev"
 
 [[d1_databases]]
 binding = "lazyfood_db"

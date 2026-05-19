@@ -11,6 +11,7 @@ dev-dist/
 backend/node_modules/
 backend/.dev.vars
 backend/.wrangler/
+backend/wrangler.toml
 *.log
 .idea/
 .vscode/
