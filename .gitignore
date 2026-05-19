@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+*.local
+.DS_Store
+.vite/
+dev-dist/
+.wrangler/
+backend/node_modules/
+backend/.dev.vars
+backend/.wrangler/
+*.log
+.idea/
+.vscode/
