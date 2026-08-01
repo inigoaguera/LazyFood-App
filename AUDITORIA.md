@@ -3,6 +3,45 @@
 Barrido completo de frontend (`src/`, ~7.500 líneas), Worker (`backend/src/`, ~900) y esquema D1.
 Origen: tras arreglar la pérdida del desglose de gastos, sospecha fundada de que hay más fallos de la misma familia — datos que se pierden solos, sin error visible.
 
+## Estado de los arreglos — rama `fix/auditoria`
+
+**Los 3 P0, los 10 P1 y los 13 P2 están arreglados** en 19 commits, uno por fallo o por pareja del mismo fichero. Los P3 siguen abiertos a propósito: son calidad interna sin síntoma y se arreglan al pasar por cada fichero.
+
+| Fallo | Commit | Verificación |
+|---|---|---|
+| P0-1 botón del chat | `1d1469a` | ✔ en vivo — la burbuja sale y arranca la IA |
+| P0-2 sync on-focus muerto | `cadc601` | ✔ medido — de **0 a 14** peticiones al disparar el foco |
+| P0-3 pantalla en blanco al elegir casa | `6e5059b` | ✔ código |
+| — error boundary (transversal) | `a6aae85` | ✔ en vivo — provocando un `throw` en el render |
+| P1-1 cocinar descontaba lo que no era | `1aefbe6` | ✔ código |
+| P1-2 cocinar sin mirar unidades | `8e38f96` | ✔ código |
+| P1-3 PATCH parcial borra recetas | `225bc6d` | ✔ código |
+| P1-4 marca de agua con reloj del móvil | `0cca72b` | ✔ en vivo — la marca ya viene del servidor |
+| P1-5 dedupe de sync ignora la casa | `0cca72b` | ✔ código |
+| P1-6 huecos del menú no se propagan | `e397269` | ✔ código · migración 0010 aplicada |
+| P1-7 datos de la casa no se propagan | `ed5ac5f` | ✔ código |
+| P1-8 operaciones de dos pasos | *parcial* | Ver nota abajo |
+| P1-9 fuerza bruta del OTP | `0f78283` | ✔ código · migración 0009 aplicada |
+| P1-10 IA con JSON truncado | `a65a4e3` | ✔ **contra producción** — el prompt que fallaba devuelve 3 recetas |
+| P2-1 descongelar una parte | `3e8aabf` | ✔ código |
+| P2-2 IA con caducidades falsas | `a8a68c0` | ✔ medido — de **5 avisos falsos a 16 correctos** sobre 23 items |
+| P2-3 recetas invisibles en el hub | `52f08f2` | ✔ en vivo — de **2 visibles a las 11** guardadas |
+| P2-4 periodos sin cota superior | `74dea0c` | ✔ código |
+| P2-5 gasto de 0 € | `74dea0c` | ✔ código |
+| P2-6 forma del envase al editar | `3e8aabf` | ✔ código |
+| P2-7 hueco del menú fantasma | `52f08f2` | ✔ código |
+| P2-8 nombre de casa en blanco | `4a3c026` | ✔ código |
+| P2-9 parpadeo en el sync completo | `d65aaaf` | ✔ en vivo — arranque sin parpadeo, 23 items |
+| P2-10 cache de casas abandonadas | `d65aaaf` | ✔ código |
+| P2-11 filtros del chat se borran | `5121b5e` | ✔ código |
+| P2-12 historial del chat sin tope | `5121b5e` | ✔ código |
+| P2-13 proxy de IA sin límites | `4a3c026` | ✔ código |
+
+**Desviaciones respecto al plan original**, ambas a mejor:
+
+- **P1-7** no necesitó migración. En vez de añadir `updated_at` a `households` y `memberships` y montarles endpoint de delta, se refresca `/me` al final de cada sync: mismo efecto visible, una llamada que ya existía, cero cambios de esquema.
+- **P1-8** (operaciones de dos pasos sin vuelta atrás) queda **abierto a conciencia**. Los dos casos con peor consecuencia ya no se pueden dar por la vía habitual, pero el patrón sigue ahí: arreglarlo de verdad pide una cola de operaciones con reintento, que es un proyecto en sí mismo y no un arreglo de auditoría. Sin cola offline, en el súper sin cobertura cualquier mutación se sigue perdiendo con un toast.
+
 ## Resumen
 
 | Severidad | Qué significa | Nº |
@@ -379,7 +418,7 @@ Verificado en vivo: **P0-1, P0-2, P0-3, P1-10, P2-2, P2-3**. El resto está conf
 
 ---
 
-## Orden de arreglo propuesto
+## Orden de arreglo propuesto *(ejecutado — ver el estado al principio)*
 
 **Tanda 1 — lo que está roto (medio día).** P0-3 (una interrogación), P0-1 (una lambda), P0-2 (el sync), P1-1 (copiar la guarda que ya existe en `util/stock.js`). Cuatro arreglos de pocas líneas que devuelven la pantalla de casas, el chat de IA, la sincronización continua y la fiabilidad de cocinar. Es, con diferencia, el mejor rendimiento por línea tocada de toda la lista.
 
