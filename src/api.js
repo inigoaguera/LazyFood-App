@@ -5,10 +5,46 @@ import { getCurrentHousehold } from './api/session.js';
 const MODEL = 'gemini-2.5-flash';
 export const proxyConfigured = _proxyConfigured;
 
+// Error propio para poder distinguir "la IA contestó algo que no entiendo" de
+// "no hay conexión". Antes ambos acababan en el mismo mensaje de red, que
+// mandaba a mirar el wifi cuando el wifi estaba perfecto.
+export class AiParseError extends Error {
+  constructor(raw) {
+    super('No he entendido la respuesta de la IA');
+    this.name = 'AiParseError';
+    this.code = 'AI_PARSE';
+    this.raw = raw;
+  }
+}
+
+// gemini-2.5-flash gasta un presupuesto de razonamiento VARIABLE antes de emitir
+// la respuesta visible (medido: entre 623 y 1.655 tokens para el mismo prompt).
+// Cuando se dispara, la salida se trunca a media frase y JSON.parse revienta:
+// ése es el fallo intermitente de la IA. Estas llamadas piden JSON estructurado
+// y no necesitan razonamiento extendido, así que se desactiva y se fija un
+// techo de salida holgado.
+const JSON_GEN_DEFAULTS = {
+  responseMimeType: 'application/json',
+  maxOutputTokens: 8192,
+  thinkingConfig: { thinkingBudget: 0 },
+};
+const jsonConfig = (extra = {}) => ({ ...JSON_GEN_DEFAULTS, ...extra });
+
 async function callAi(payload) {
   const householdId = await getCurrentHousehold();
   if (!householdId) throw new Error('Sin casa activa');
   return api('/ai', { method: 'POST', body: { model: MODEL, payload, householdId } });
+}
+
+// Llama, extrae y parsea. Si el JSON viene roto reintenta una vez: el truncado
+// depende del razonamiento que gaste el modelo en cada ejecución concreta.
+async function callAiJson(payload) {
+  try {
+    return tryParseJSON(extractText(await callAi(payload)));
+  } catch (e) {
+    if (e?.code !== 'AI_PARSE') throw e;
+    return tryParseJSON(extractText(await callAi(payload)));
+  }
 }
 
 function extractText(geminiResponse) {
@@ -18,11 +54,20 @@ function extractText(geminiResponse) {
 }
 
 function tryParseJSON(raw) {
-  let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-  const first = cleaned.indexOf('{');
-  const last = cleaned.lastIndexOf('}');
-  if (first >= 0 && last > first) cleaned = cleaned.slice(first, last + 1);
-  return JSON.parse(cleaned);
+  let cleaned = String(raw || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+  // Acepta objeto o array en el nivel superior; antes sólo contemplaba `{`.
+  const starts = [cleaned.indexOf('{'), cleaned.indexOf('[')].filter((i) => i >= 0);
+  if (starts.length) {
+    const first = Math.min(...starts);
+    const closer = cleaned[first] === '{' ? '}' : ']';
+    const last = cleaned.lastIndexOf(closer);
+    if (last > first) cleaned = cleaned.slice(first, last + 1);
+  }
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    throw new AiParseError(raw);
+  }
 }
 
 export async function suggestRecipes({ inventory, userPrompt }) {
@@ -50,11 +95,10 @@ Responde SÓLO con JSON válido (sin markdown, sin texto extra) con esta forma:
 Máximo 3 recetas. Prioriza ingredientes que caduquen pronto. Sólo usa ingredientes del inventario.
 Tienen que ser comidas/cenas completas, no snacks. Añade pasos breves (3-6) para que el usuario pueda ejecutarlas.`;
 
-  const res = await callAi({
+  return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.8, responseMimeType: 'application/json' },
+    generationConfig: jsonConfig({ temperature: 0.8 }),
   });
-  return tryParseJSON(extractText(res));
 }
 
 export async function scanReceipt({ imageBase64, mimeType = 'image/jpeg' }) {
@@ -98,7 +142,7 @@ Responde SÓLO con JSON válido sin markdown:
     {"name": "Sal yodada", "qty": 1, "price": 0.65, "category": "conserva", "loc": "pantry", "type": "continuous", "unit": "kg", "shape": "jar", "expiresInDays": null, "emoji": "🧂"}
   ]
 }`;
-  const res = await callAi({
+  return callAiJson({
     contents: [{
       role: 'user',
       parts: [
@@ -106,9 +150,8 @@ Responde SÓLO con JSON válido sin markdown:
         { inlineData: { mimeType, data: imageBase64 } },
       ],
     }],
-    generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+    generationConfig: jsonConfig({ temperature: 0.2 }),
   });
-  return tryParseJSON(extractText(res));
 }
 
 // Sugiere recetas para el hub de Recetas, con 3 secciones:
@@ -173,11 +216,10 @@ Formato — SÓLO JSON válido sin markdown:
 
 Si el inventario está vacío o casi vacío, devuelve arrays vacíos pero respeta la estructura.`;
 
-  const res = await callAi({
+  return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.85, responseMimeType: 'application/json' },
+    generationConfig: jsonConfig({ temperature: 0.85 }),
   });
-  return tryParseJSON(extractText(res));
 }
 
 // Pide UNA receta de reemplazo para una sección concreta del hub.
@@ -213,11 +255,10 @@ Responde SÓLO con JSON válido sin markdown:
 img debe ser una de: pasta, tortilla, caprese, bocata, huevos, tostada, risotto, curry, salmon, paella, guaca, pizza, burger, taco, ramen, sopa, ensalada, pollo, carne, sushi, pancakes, donut, cake, fruta, smoothie, cafe, helado, picante, bento.
 La receta debe ser una comida/cena completa, no un snack.`;
 
-  const res = await callAi({
+  return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.9, responseMimeType: 'application/json' },
+    generationConfig: jsonConfig({ temperature: 0.9 }),
   });
-  return tryParseJSON(extractText(res));
 }
 
 // Reescala los ingredientes de una receta para nuevas raciones.
@@ -249,11 +290,10 @@ Responde SÓLO con JSON válido:
 }
 Mantén el mismo orden y nº de ingredientes que la entrada.`;
 
-  const res = await callAi({
+  return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
+    generationConfig: jsonConfig({ temperature: 0.3 }),
   });
-  return tryParseJSON(extractText(res));
 }
 
 export async function autoPlanMenu({ inventory, recipes, currentPlan, days, meals }) {
@@ -282,9 +322,8 @@ Responde SÓLO con JSON válido:
 }
 Sólo asigna a slots VACÍOS. Usa los IDs exactos de la lista de recetas.`;
 
-  const res = await callAi({
+  return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.6, responseMimeType: 'application/json' },
+    generationConfig: jsonConfig({ temperature: 0.6 }),
   });
-  return tryParseJSON(extractText(res));
 }

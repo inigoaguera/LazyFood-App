@@ -116,9 +116,13 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
       }
     } catch (e) {
       const msg = String(e?.message || '');
-      const friendly = msg.includes('429')
-        ? 'Demasiadas peticiones seguidas. Espera ~1 minuto y vuelve a probar 🐢'
-        : 'Ups, no he podido conectar. Inténtalo de nuevo en un momento.';
+      // Un JSON roto no es un problema de red: decirlo mandaba a mirar el wifi
+      // cuando la conexión estaba perfecta.
+      const friendly = e?.code === 'AI_PARSE'
+        ? 'Me he hecho un lío con mi propia respuesta y no he sabido leerla. Vuelve a intentarlo 🙈'
+        : msg.includes('429')
+          ? 'Demasiadas peticiones seguidas. Espera ~1 minuto y vuelve a probar 🐢'
+          : 'Ups, no he podido conectar. Inténtalo de nuevo en un momento.';
       setMessages((m) => [...m, { role: 'ai', text: friendly }]);
     } finally {
       setBusy(false);
