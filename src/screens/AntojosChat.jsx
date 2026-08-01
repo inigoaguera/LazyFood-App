@@ -13,6 +13,10 @@ import { inventoryForPrompt } from '../util/aiInventory.js';
 
 const WELCOME = { role: 'ai', text: '¡Hola! Cuéntame qué te apetece y te propongo recetas con lo que tienes en casa. Pídeme rápido, ligero, dulce, sin cocinar… lo que sea.' };
 
+// Tope del historial que se persiste. Cada respuesta lleva recetas completas
+// dentro, así que sin límite la entrada de IndexedDB crece indefinidamente.
+const MAX_HISTORY = 40;
+
 const QUICK_FILTERS = [
   { id: 'quick', label: '⚡ Rápido', prompt: 'menos de 15 minutos' },
   { id: 'fewdishes', label: '🍽 Pocos cacharros', prompt: 'que ensucie poco' },
@@ -55,10 +59,13 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
     return () => { cancelled = true; };
   }, [hid]);
 
-  // Persistir cada vez que cambia (sólo si ya hidratamos para no machacar el historial al boot)
+  // Persistir cada vez que cambia (sólo si ya hidratamos para no machacar el historial al boot).
+  // Se poda a los últimos MAX_HISTORY: cada respuesta lleva recetas completas
+  // dentro, así que sin tope la entrada de IndexedDB crece sin límite y se
+  // reescribe entera en cada mensaje.
   useEffect(() => {
     if (!hid || !hydrated) return;
-    setSetting(`antojos:${hid}`, messages).catch(() => {});
+    setSetting(`antojos:${hid}`, messages.slice(-MAX_HISTORY)).catch(() => {});
   }, [messages, hid, hydrated]);
 
   useEffect(() => {
@@ -123,7 +130,6 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
       setMessages((m) => [...m, { role: 'ai', text: friendly }]);
     } finally {
       setBusy(false);
-      setFilters({});
     }
   };
 
