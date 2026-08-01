@@ -31,6 +31,8 @@ export async function syncHousehold(hid, { full = false } = {}) {
   return inflight;
 }
 
+// Devuelve la función de limpieza para que quien lo registre pueda soltar los
+// listeners (si no, cada re-registro acumularía uno más).
 export function setupFocusSync(getHid) {
   let lastTrigger = 0;
   const trigger = () => {
@@ -41,8 +43,11 @@ export function setupFocusSync(getHid) {
     lastTrigger = now;
     syncHousehold(hid).catch(() => { /* swallow */ });
   };
+  const onVisible = () => { if (!document.hidden) trigger(); };
   window.addEventListener('focus', trigger);
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) trigger();
-  });
+  document.addEventListener('visibilitychange', onVisible);
+  return () => {
+    window.removeEventListener('focus', trigger);
+    document.removeEventListener('visibilitychange', onVisible);
+  };
 }

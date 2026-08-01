@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { LFCtx } from './components/ctx.js';
 import { LF_PALETTES, LF_DENSITIES } from './tokens/palettes.js';
@@ -148,11 +148,13 @@ export default function App() {
     }
   }, [currentHousehold]);
 
-  useEffect(() => {
-    setupFocusSync(() => settings.currentHouseholdId || null);
-    // setup once
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // El listener se registra una sola vez, así que no puede leer `currentHousehold`
+  // directamente: capturaría el valor del primer render (cuando settings aún es {}
+  // porque IndexedDB no ha respondido) y el sync no dispararía nunca. Va por ref.
+  const hidRef = useRef(currentHousehold);
+  useEffect(() => { hidRef.current = currentHousehold; }, [currentHousehold]);
+
+  useEffect(() => setupFocusSync(() => hidRef.current), []);
 
   // ─── Routing dentro de la app ──────────────────────────
   const [route, setRoute] = useState('home');
