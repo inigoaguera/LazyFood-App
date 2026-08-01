@@ -7,6 +7,7 @@ import { LF_SHADOWS } from '../tokens/palettes.js';
 import { RecipeThumb } from '../data/recipeThumbs.jsx';
 import { autoPlanMenu, proxyConfigured } from '../api.js';
 import { setMenuSlot as cloudSetMenuSlot } from '../api/resources.js';
+import { inventoryForPrompt } from '../util/aiInventory.js';
 
 const DAYS = [
   { id: 'mon', short: 'L', long: 'Lunes' },
@@ -72,10 +73,7 @@ export default function Menu({ onBack, onOpenRecipe }) {
     }
     setBusy(true);
     try {
-      const inv = items.map((it) => {
-        const qty = it.type === 'continuous' ? `${it.fill}%` : `${it.qty} ${it.unit}`;
-        return `- ${it.name}: ${qty}${it.expires <= 5 ? ' ⚠' : ''}`;
-      }).join('\n');
+      const inv = inventoryForPrompt(items);
       const result = await autoPlanMenu({
         inventory: inv, recipes, currentPlan: plan,
         days: DAYS.map((d) => d.id), meals: MEALS.map((m) => m.id),

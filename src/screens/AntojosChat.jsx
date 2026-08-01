@@ -9,6 +9,7 @@ import { create as resourceCreate } from '../api/resources.js';
 import { syncHousehold } from '../api/sync.js';
 import { toast } from '../components/base.jsx';
 import { RecipeThumb } from '../data/recipeThumbs.jsx';
+import { inventoryForPrompt } from '../util/aiInventory.js';
 
 const WELCOME = { role: 'ai', text: '¡Hola! Cuéntame qué te apetece y te propongo recetas con lo que tienes en casa. Pídeme rápido, ligero, dulce, sin cocinar… lo que sea.' };
 
@@ -102,11 +103,7 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
     }
 
     try {
-      const inv = items.map((it) => {
-        const qty = it.type === 'continuous' ? `${it.fill}% (${it.unit})` : `${it.qty} ${it.unit}`;
-        const exp = it.expires <= 5 ? ` ⚠ caduca en ${it.expires}d` : '';
-        return `- ${it.name}: ${qty}${exp}`;
-      }).join('\n');
+      const inv = inventoryForPrompt(items);
 
       const res = await suggestRecipes({ inventory: inv, userPrompt: fullUser });
       if (res?.recipes?.length) {

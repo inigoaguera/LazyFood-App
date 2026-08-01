@@ -10,6 +10,7 @@ import { RECIPE_THUMBS, RecipeThumb } from '../data/recipeThumbs.jsx';
 import RecipeEditor from './RecipeEditor.jsx';
 import { recipeStockStatus, stockBadge } from '../util/stock.js';
 import RecipeFilters, { applyFilters, countActive } from './RecipeFilters.jsx';
+import { inventoryForPrompt } from '../util/aiInventory.js';
 
 // Re-exports para mantener compat con código que ya importa de aquí.
 export { RECIPE_THUMBS, RecipeThumb };
@@ -68,11 +69,7 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
     const slotKey = `${section}:${indexInSection}`;
     // Marcar el slot como "dándole otra vuelta..."
     setReplacingSlots((prev) => { const n = new Set(prev); n.add(slotKey); return n; });
-    const inv = items.map((it) => {
-      const qty = it.type === 'continuous' ? `${it.fill}% (${it.unit})` : `${it.qty} ${it.unit}`;
-      const exp = it.expires != null && it.expires <= 5 ? ` ⚠ caduca pronto` : '';
-      return `- ${it.name}: ${qty}${exp}`;
-    }).join('\n');
+    const inv = inventoryForPrompt(items);
     const avoid = [
       ...(aiData.effortless || []).map((r) => r.name),
       ...(aiData.chef || []).map((r) => r.name),
@@ -103,11 +100,7 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
     setAiData(null);
     setAiBusy(true);
     try {
-      const inv = items.map((it) => {
-        const qty = it.type === 'continuous' ? `${it.fill}% (${it.unit})` : `${it.qty} ${it.unit}`;
-        const exp = it.expires != null && it.expires <= 5 ? ` ⚠ caduca en ${it.expires}d` : '';
-        return `- ${it.name}: ${qty}${exp}`;
-      }).join('\n');
+      const inv = inventoryForPrompt(items);
       const result = await suggestRecipesForHub({ inventory: inv });
       // Derivar effort = tools.length (mín 1) para que el icono 🍳 cuadre con la lista de instrumentos
       const enrichEffort = (arr) => (arr || []).map((r) => ({
