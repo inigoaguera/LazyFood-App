@@ -216,7 +216,7 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
               fontFamily: fonts.body, lineHeight: 1.3, maxHeight: 100,
             }}
           />
-          <button onClick={send} disabled={busy} style={{
+          <button onClick={() => send()} disabled={busy} style={{
             width: 44, height: 44, borderRadius: 22, flexShrink: 0,
             background: busy ? pal.lineStrong : pal.primary,
             border: 'none', cursor: busy ? 'default' : 'pointer',
