@@ -62,7 +62,13 @@ export async function remove(table, hid, id) {
 export async function listMenuPlan(hid, since = 0) {
   const res = await api(`/households/${hid}/menu-plan?since=${since}`);
   for (const r of res.rows || []) {
-    await db.menuPlan.put({ householdId: hid, slot: r.slot, recipeId: r.recipeId, updated_at: r.updated_at });
+    // Un slot desasignado viaja como fila con deleted_at: hay que quitarlo de
+    // la cache, si no la receta se queda puesta en este dispositivo.
+    if (r.deleted_at) {
+      await db.menuPlan.delete([hid, r.slot]);
+    } else {
+      await db.menuPlan.put({ householdId: hid, slot: r.slot, recipeId: r.recipeId, updated_at: r.updated_at });
+    }
   }
   return res;
 }
