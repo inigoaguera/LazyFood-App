@@ -5,6 +5,9 @@ import { sendMagicLink } from '../email.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Intentos fallidos permitidos por código OTP antes de invalidarlo.
+const MAX_OTP_ATTEMPTS = 5;
+
 export async function authRequest(request, env, cors) {
   const body = await safeJson(request);
   const email = (body?.email || '').trim().toLowerCase();
@@ -21,6 +24,12 @@ export async function authRequest(request, env, cors) {
 
   const { token, ttl } = newAuthToken();
   const code = newOtpCode();
+  // Invalida los códigos anteriores de este email: si conviven varios válidos a
+  // la vez, cada intento de adivinar tiene tantas oportunidades como códigos
+  // vivos haya (con 10, la probabilidad pasa de 1/1.000.000 a 1/100.000).
+  await env.lazyfood_db.prepare(
+    'UPDATE auth_tokens SET used_at=? WHERE email=? AND used_at IS NULL'
+  ).bind(now(), email).run();
   await env.lazyfood_db.prepare(
     'INSERT INTO auth_tokens (token, email, code, expires_at) VALUES (?, ?, ?, ?)'
   ).bind(token, email, code, now() + ttl).run();
@@ -47,10 +56,23 @@ export async function authVerify(request, env, cors) {
     ).bind(token).first();
     matchKey = token;
   } else if (code && emailParam) {
-    // Verifica por código + email (para PWAs en iOS donde el link no se puede usar)
+    // Verifica por código + email (para PWAs en iOS donde el link no se puede usar).
+    // Se busca por EMAIL, no por código: filtrando por código, un fallo y un
+    // email inexistente son indistinguibles y no hay fila donde contar intentos.
     row = await env.lazyfood_db.prepare(
-      'SELECT token, email, expires_at, used_at FROM auth_tokens WHERE code=? AND email=? AND used_at IS NULL ORDER BY expires_at DESC LIMIT 1'
-    ).bind(code, emailParam).first();
+      'SELECT token, email, code, expires_at, used_at, attempts FROM auth_tokens WHERE email=? AND used_at IS NULL ORDER BY expires_at DESC LIMIT 1'
+    ).bind(emailParam).first();
+    if (row) {
+      if ((row.attempts || 0) >= MAX_OTP_ATTEMPTS) {
+        return errorResponse('RATE_LIMIT', 'Demasiados intentos fallidos. Pide un código nuevo.', 429, cors);
+      }
+      if (row.code !== code) {
+        await env.lazyfood_db.prepare(
+          'UPDATE auth_tokens SET attempts = attempts + 1 WHERE token=?'
+        ).bind(row.token).run();
+        return errorResponse('BAD_TOKEN', 'Código o link incorrecto', 400, cors);
+      }
+    }
     matchKey = row?.token;
   } else {
     return errorResponse('BAD_INPUT', 'Falta token o (email + código)', 400, cors);
