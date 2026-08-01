@@ -4,6 +4,7 @@ import { LF_SHADOWS } from '../tokens/palettes.js';
 import LFIcon from '../icons/LFIcon.jsx';
 import ExpenseEditor from './ExpenseEditor.jsx';
 import { localISODate } from '../util/date.js';
+import { expenseLines } from '../util/expenseLines.js';
 
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
@@ -190,7 +191,8 @@ const DayDetail = ({ date, expenses, itemsByExpense = {}, onAddNew, onEdit }) =>
 
 const ExpenseRow = ({ expense, linkedItems = [], onClick }) => {
   const { pal, fonts } = useLF();
-  const items = linkedItems;
+  // Desglose guardado en la compra; los items vivos sólo son fallback legacy.
+  const items = expenseLines(expense, linkedItems);
   const itemCount = items.length;
   return (
     <button onClick={onClick} style={{

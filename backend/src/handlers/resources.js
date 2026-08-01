@@ -43,13 +43,22 @@ const RESOURCES = {
   expenses: {
     table: 'expenses',
     columns: ['date', 'amount', 'cat', 'store', 'saved_on_discounts', 'items_json', 'photo_url'],
-    fromClient: (p) => ({
-      ...p,
-      saved_on_discounts: p.savedOnDiscounts ?? p.saved_on_discounts ?? null,
-      items_json: p.items ? JSON.stringify(p.items) : (p.items_json ?? null),
-      photo_url: p.photoUrl ?? p.photo_url ?? null,
-      savedOnDiscounts: undefined, items: undefined, photoUrl: undefined,
-    }),
+    // Sólo tocamos las columnas que vengan en el payload. Así un PATCH parcial
+    // (p.ej. cambiar sólo el total) no puede borrar el desglose guardado del
+    // ticket ni la foto: el registro de la compra es permanente.
+    fromClient: (p) => {
+      const out = { ...p, savedOnDiscounts: undefined, items: undefined, photoUrl: undefined };
+      if ('savedOnDiscounts' in p || 'saved_on_discounts' in p) {
+        out.saved_on_discounts = p.savedOnDiscounts ?? p.saved_on_discounts ?? null;
+      }
+      if ('items' in p || 'items_json' in p) {
+        out.items_json = p.items ? JSON.stringify(p.items) : (p.items_json ?? null);
+      }
+      if ('photoUrl' in p || 'photo_url' in p) {
+        out.photo_url = p.photoUrl ?? p.photo_url ?? null;
+      }
+      return out;
+    },
     toClient: (r) => ({
       ...r,
       savedOnDiscounts: r.saved_on_discounts,

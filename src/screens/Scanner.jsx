@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLF, haptic } from '../components/ctx.js';
 import { Header, IconBtn, Button, toast } from '../components/base.jsx';
 import { scanReceipt, proxyConfigured } from '../api.js';
@@ -7,6 +7,10 @@ import LFIcon from '../icons/LFIcon.jsx';
 import { create as resourceCreate } from '../api/resources.js';
 import { localISODate } from '../util/date.js';
 import { daysToTs, suggestedExpiresAt } from '../util/expires.js';
+import { makeLine, linesTotal } from '../util/expenseLines.js';
+
+const SCAN_CATS = ['lacteo', 'verdura', 'fruta', 'carne', 'pescado', 'pasta', 'conserva', 'salsa', 'especia', 'bebida', 'snack', 'congelado'];
+const normalizeCat = (c) => (SCAN_CATS.includes(c) ? c : 'conserva');
 
 export default function Scanner({ onBack, onDone }) {
   const { pal, fonts, currentHouseholdMeta } = useLF();
@@ -18,6 +22,23 @@ export default function Scanner({ onBack, onDone }) {
   const [meta, setMeta] = useState({ store: null, total: null, savedOnDiscounts: null });
   const videoRef = useRef(null);
   const fileRef = useRef(null);
+
+  // Líneas del ticket tal y como quedarán guardadas dentro del gasto.
+  const lines = useMemo(() => detected.map((d) => makeLine({
+    name: d.name,
+    emoji: d.emoji,
+    cat: normalizeCat(d.cat || d.category),
+    qty: d.qty,
+    unit: d.unit || (d.type === 'continuous' ? 'L' : 'uds'),
+    price: d.price,
+  })), [detected]);
+  const linesSum = linesTotal(lines);
+  // Si la IA no ha sabido leer el total del ticket, lo sumamos de los productos:
+  // así la compra queda registrada igual y no se pierde el gasto.
+  const totalIsEstimated = meta.total == null && linesSum > 0;
+  const effectiveTotal = meta.total != null
+    ? Number(meta.total)
+    : (linesSum > 0 ? Math.round(linesSum * 100) / 100 : null);
 
   useEffect(() => {
     if (phase !== 'camera') return;
@@ -119,21 +140,24 @@ export default function Scanner({ onBack, onDone }) {
     if (!hid) { toast('Sin casa activa', 'error'); return; }
     let expenseId = null;
     // Si hay total, creamos primero el expense para poder vincular los items.
-    if (meta.total != null) {
+    // Las líneas se congelan DENTRO del gasto: a partir de aquí el registro de la
+    // compra vive por su cuenta y consumir o borrar items ya no puede vaciarlo.
+    if (effectiveTotal != null) {
       try {
         const exp = await resourceCreate('expenses', hid, {
           date: meta.date || localISODate(),
-          amount: Number(meta.total),
+          amount: effectiveTotal,
           store: meta.store || 'Supermercado',
           cat: 'super',
           savedOnDiscounts: meta.savedOnDiscounts != null ? Number(meta.savedOnDiscounts) : null,
+          items: lines,
         });
         expenseId = exp?.id || null;
       } catch (e) { /* sin expense, igual añadimos items sueltos */ }
     }
     let added = 0;
     for (const d of detected) {
-      const cat = ['lacteo', 'verdura', 'fruta', 'carne', 'pescado', 'pasta', 'conserva', 'salsa', 'especia', 'bebida', 'snack', 'congelado'].includes(d.category) ? d.category : 'conserva';
+      const cat = normalizeCat(d.cat || d.category);
       try {
         const type = d.type === 'continuous' ? 'continuous' : 'discrete';
         await resourceCreate('items', hid, {
@@ -234,7 +258,7 @@ export default function Scanner({ onBack, onDone }) {
       <Header big title={`¡${detected.length} items detectados!`} subtitle="Revisa y ajusta antes de añadir"
         left={<IconBtn icon="chevronLeft" onClick={() => setPhase('camera')} />} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px' }}>
-        {(meta.store || meta.total) && (
+        {(meta.store || effectiveTotal != null) && (
           <div style={{
             padding: 12, background: pal.primarySoft, borderRadius: 12,
             display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
@@ -242,8 +266,13 @@ export default function Scanner({ onBack, onDone }) {
             <span style={{ fontSize: 22 }}>🎉</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: pal.primary }}>
-                {meta.store || 'Supermercado'}{meta.total ? ` · ${Number(meta.total).toFixed(2)} €` : ''}
+                {meta.store || 'Supermercado'}{effectiveTotal != null ? ` · ${effectiveTotal.toFixed(2)} €` : ''}
               </div>
+              {totalIsEstimated && (
+                <div style={{ fontSize: 11, color: pal.primary, opacity: 0.8 }}>
+                  No he leído el total en el ticket: lo he sumado de los productos. Puedes corregirlo luego en Gastos.
+                </div>
+              )}
               {meta.savedOnDiscounts != null && (
                 <div style={{ fontSize: 11, color: pal.primary, opacity: 0.8 }}>
                   Ahorraste {Number(meta.savedOnDiscounts).toFixed(2)} € con ofertas

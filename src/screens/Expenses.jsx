@@ -7,6 +7,7 @@ import ExpenseCalendar from './ExpenseCalendar.jsx';
 import ExpenseEditor from './ExpenseEditor.jsx';
 import { localISODate } from '../util/date.js';
 import { useCategories } from '../util/categories.js';
+import { expenseLines } from '../util/expenseLines.js';
 
 // Categorías virtuales para el desglose cuando un item no tiene cat o falta info.
 const FALLBACK_CATS = {
@@ -53,7 +54,9 @@ export default function Expenses({ onBack }) {
     [hid], []
   );
 
-  // Mapa expense_id -> [items vinculados]
+  // Mapa expense_id -> [items vivos vinculados].
+  // Sólo se usa como fallback para compras antiguas sin desglose guardado: las
+  // nuevas llevan su propio snapshot dentro del gasto (ver util/expenseLines.js).
   const itemsByExpense = useMemo(() => {
     const map = {};
     for (const it of allItems) {
@@ -147,7 +150,7 @@ export default function Expenses({ onBack }) {
             .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
             .slice(0, 10)
             .map((e) => {
-              const linked = itemsByExpense[e.id] || [];
+              const linked = expenseLines(e, itemsByExpense[e.id] || []);
               return (
                 <button key={e.id} onClick={() => setEditor({ expense: e })} style={{
                   textAlign: 'left', background: pal.surface,
@@ -230,13 +233,14 @@ function formatDate(s) {
 
 const CategoryBreakdown = ({ expenses, itemsByExpense, chartVariant, catInfo }) => {
   const { pal } = useLF();
-  // Agregamos por categoría usando items VINCULADOS a las compras del periodo.
-  // Si la suma de items no llega al total del expense, el resto va a "Otros"
+  // Agregamos por categoría usando el desglose GUARDADO en cada compra (o los
+  // items vivos vinculados si es una compra antigua sin snapshot).
+  // Si la suma de líneas no llega al total del expense, el resto va a "Otros"
   // para que el desglose siempre cuadre con el número grande de arriba.
   const byCat = {};
   for (const e of expenses) {
     const total = Number(e.amount) || 0;
-    const linked = itemsByExpense?.[e.id] || [];
+    const linked = expenseLines(e, itemsByExpense?.[e.id] || []);
     if (linked.length > 0) {
       let itemsSum = 0;
       for (const it of linked) {
