@@ -1,6 +1,7 @@
 // Sync engine: pull-on-focus.
 // Trae deltas de cada tabla desde la última sync para la casa actual.
 import { listAll, listSince, listMenuPlan } from './resources.js';
+import { fetchMe } from './session.js';
 import { getSetting, setSetting } from '../db.js';
 
 const TABLES = ['items', 'recipes', 'shopping', 'expenses', 'recipeDetails', 'categories'];
@@ -37,6 +38,13 @@ export async function syncHousehold(hid, { full = false } = {}) {
       // filtro del servidor es `updated_at > ?` (estricto).
       const watermark = serverTimes.length ? Math.min(...serverTimes) - 1000 : Date.now();
       await setSetting(lastKey, watermark);
+
+      // households y memberships no tienen updated_at, así que quedan fuera del
+      // delta sync: el nombre de la casa, el presupuesto, el color y las
+      // expulsiones sólo viajaban en /me, que se pedía una vez al arrancar.
+      // Refrescarlo aquí es lo que hace que un cambio de presupuesto llegue al
+      // otro móvil sin reiniciar la app.
+      try { await fetchMe(); } catch { /* el sync de datos ya ha ido bien */ }
     } finally {
       if (inflight.get(hid) === run) inflight.delete(hid);
     }
