@@ -121,6 +121,15 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
     const items = await db.items.where({ householdId: hid }).toArray();
     let consumed = 0;
     const missing = []; // ingredientes que no encontramos o que están a 0
+    const approx = []; // descontados "a ojo" porque las unidades no casaban
+
+    // "uds"/"unidades"/"ud" son la misma cosa; el resto se compara tal cual.
+    const normalizeUnit = (u) => {
+      const s = String(u || '').trim().toLowerCase();
+      if (!s) return '';
+      if (['ud', 'uds', 'unidad', 'unidades', 'u'].includes(s)) return 'uds';
+      return s;
+    };
 
     // Parsea "0.25", "0,25", "1/4", "200" etc. → número o NaN
     const parseQty = (raw) => {
@@ -159,14 +168,25 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
       }
       try {
         const ingQty = parseQty(ing.qty);
+        // Las unidades tienen que ser comparables para poder restar la cantidad
+        // de la receta. Sin esta comprobación, "200 g" de pasta restaba 200
+        // PAQUETES del inventario y dejaba el item a cero de un plumazo.
+        const ingUnit = normalizeUnit(ing.unit);
+        const itemUnit = normalizeUnit(match.unit);
+        const comparable = !ingUnit || ingUnit === itemUnit;
+
         if (match.type === 'discrete' && match.qty > 0) {
-          // Si la receta especifica cantidad numérica, restar exacto. Si no, restar 1 unidad.
-          const dec = Number.isFinite(ingQty) && ingQty > 0 ? ingQty : 1;
+          const exact = comparable && Number.isFinite(ingQty) && ingQty > 0;
+          const dec = exact ? ingQty : 1;
+          if (!exact && Number.isFinite(ingQty) && ingQty > 1) approx.push(ing);
           const next = Math.max(0, +(match.qty - dec).toFixed(2));
           await resourcePatch('items', hid, match.id, { qty: next });
           consumed++;
         } else if (match.type === 'continuous' && match.fill > 0) {
-          // Para continuos sin info clara de cantidad, descontamos 15%.
+          // Los continuos guardan un porcentaje de llenado, no una cantidad
+          // absoluta: sin saber la capacidad del envase no se puede traducir
+          // "200 ml" a un %. Se descuenta un 15% fijo y se avisa.
+          if (Number.isFinite(ingQty) && ingQty > 0) approx.push(ing);
           await resourcePatch('items', hid, match.id, { fill: Math.max(0, match.fill - 15) });
           consumed++;
         } else {
@@ -177,7 +197,10 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
     }
 
     if (missing.length === 0) {
-      toast(`¡A comer! ${consumed} ingrediente${consumed === 1 ? '' : 's'} descontado${consumed === 1 ? '' : 's'}`);
+      const base = `¡A comer! ${consumed} ingrediente${consumed === 1 ? '' : 's'} descontado${consumed === 1 ? '' : 's'}`;
+      toast(approx.length
+        ? `${base}. En ${approx.map((a) => a.name).join(', ')} lo he hecho a ojo: las unidades no cuadraban`
+        : base);
     } else {
       const names = missing.map((m) => m.name).join(', ');
       toast(`Te faltan: ${names}`, 'info', {
