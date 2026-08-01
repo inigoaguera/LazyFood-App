@@ -67,7 +67,7 @@ export default function HouseholdPicker({ onPick, onCreate, onJoin, onLogout }) 
           </div>
         )}
 
-        {me && me.households.length === 0 && !loading && (
+        {me?.households?.length === 0 && !loading && (
           <div style={{
             padding: 24, textAlign: 'center', color: pal.inkSoft,
             background: pal.surface, borderRadius: 16, border: `0.5px solid ${pal.line}`, marginBottom: 18,

@@ -375,15 +375,7 @@ Verificado en vivo: **P0-1, P0-2, P0-3, P1-10, P2-2, P2-3**. El resto está conf
 - **P1-1 / P1-2 (cocinar)**: los datos de ejemplo **no traen ni un solo ingrediente en unidades de peso** (medido: 0 de todas las recetas), así que el caso "200 g → resta 200 unidades" no se puede provocar sin fabricar una receta a medida. La lógica es inequívoca en el código (`dec = ingQty` sin mirar `unit`), pero no lo he visto ocurrir.
 - **P2-1 (congelado parcial)**: requiere una secuencia de movimientos que ensucia el inventario de pruebas; queda para la sesión de arreglos, donde sirve además como test de regresión.
 - **Flujos con `confirm()`** (borrar gasto, borrar casa, vaciar carro): el navegador de pruebas suprime los diálogos nativos y los da por cancelados. Sólo se pueden recorrer a mano.
-- **`PRAGMA foreign_keys`**: lo intenté con una consulta de sólo lectura contra D1 y **el `wrangler` local no está autorizado**: `The given account is not valid or is not authorized to access this service [code: 7403]`. Hay que renovar la sesión (`npx wrangler login`) antes de poder comprobarlo — y eso mismo bloqueará el despliegue del arreglo de gastos que sigue pendiente. La consulta a lanzar cuando esté resuelto:
-
-  ```sql
-  SELECT (SELECT COUNT(*) FROM items    i LEFT JOIN households h ON h.id=i.household_id WHERE h.id IS NULL) AS items_huerfanos,
-         (SELECT COUNT(*) FROM recipes  r LEFT JOIN households h ON h.id=r.household_id WHERE h.id IS NULL) AS recetas_huerfanas,
-         (SELECT COUNT(*) FROM expenses e LEFT JOIN households h ON h.id=e.household_id WHERE h.id IS NULL) AS gastos_huerfanos;
-  ```
-
-  Si devuelve algo distinto de cero, los `ON DELETE CASCADE` no se están aplicando y cada casa borrada ha dejado su rastro para siempre.
+- ~~**`PRAGMA foreign_keys`**~~ — **RESUELTO (2026-08-01)**. Consulta de integridad lanzada contra la base real: **0 items huérfanos, 0 recetas huérfanas, 0 gastos huérfanos**. Los `ON DELETE CASCADE` sí se aplican en D1 y borrar una casa no deja rastro. Descartado como riesgo.
 
 ---
 
