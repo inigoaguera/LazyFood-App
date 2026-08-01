@@ -13,7 +13,10 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
   const allCategories = useCategories(hid);
   const variant = settings.gaugeVariant || 'bottle';
   const [data, setData] = useState(() => {
-    if (item) return { shape: item.shape || variant, ...item };
+    // El spread va PRIMERO: al revés, ...item machacaba el shape recién
+    // calculado con el original, que puede ser null, y el fallback a la forma
+    // por defecto no se aplicaba nunca al editar.
+    if (item) return { ...item, shape: item.shape || variant };
     const base = {
       name: '', emoji: '🥫', cat: 'conserva', loc: 'pantry',
       type: 'continuous', fill: 100, qty: 1, unit: 'ud',

@@ -114,15 +114,20 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
       } else {
         // Partial move discreto: crea un nuevo item en dest con moveQty,
         // decrementa el original.
+        // Usa el MISMO buildLocPatch que el movimiento total: si no, sacar una
+        // parte del congelador se llevaba el expiresAt sin compensar el tiempo
+        // congelado y esa parte aparecía caducada, mientras que sacarlo todo sí
+        // lo compensaba. El mismo gesto daba dos resultados distintos.
+        const locPatch = buildLocPatch(dest, it.frozenAt != null);
         const newItem = {
           name: it.name, emoji: it.emoji, cat: it.cat,
-          loc: dest,
           type: 'discrete',
           qty: moveQty,
           unit: it.unit,
           expiresAt: it.expiresAt ?? null,
-          frozenAt: dest === 'freezer' ? now : null,
+          frozenAt: null,
           openedAt: it.openedAt ?? null,
+          ...locPatch,
         };
         await resourceCreate('items', hid, newItem);
         await resourcePatch('items', hid, it.id, { qty: +(totalQty - moveQty).toFixed(2) });
