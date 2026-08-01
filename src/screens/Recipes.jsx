@@ -32,7 +32,12 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
   );
   const itemsCount = items.length;
 
-  const yours = recipes.filter((r) => r.group === 'yours');
+  // Todas las recetas guardadas, sea cual sea su grupo. El editor deja elegir
+  // entre yours/effortless/chef/oneOff, pero las otras tres secciones del hub
+  // son sugerencias de IA en vivo, no recetas guardadas: filtrar por
+  // group === 'yours' hacía desaparecer de la interfaz las que guardabas con
+  // otro grupo (seguían en la base y sólo salían en el selector del menú).
+  const yours = recipes;
 
   // Mapa nombre→ingredientes para calcular el indicador de stock por card
   const detailsByName = React.useMemo(() => {

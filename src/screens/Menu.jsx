@@ -42,8 +42,15 @@ export default function Menu({ onBack, onOpenRecipe }) {
   const [actions, setActions] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const plan = Object.fromEntries(planRows.map((r) => [r.slot, r.recipeId]));
   const recipesById = Object.fromEntries(recipes.map((r) => [r.id, r]));
+  // Un slot cuya receta se borró se pintaba vacío pero seguía contando como
+  // lleno, y el auto-plan no lo rellenaba porque lo veía ocupado. Se ignoran
+  // las asignaciones cuya receta ya no existe.
+  const plan = Object.fromEntries(
+    planRows
+      .filter((r) => r.recipeId && recipesById[r.recipeId])
+      .map((r) => [r.slot, r.recipeId])
+  );
 
   const totalSlots = DAYS.length * MEALS.length;
   const filled = Object.values(plan).filter(Boolean).length;
