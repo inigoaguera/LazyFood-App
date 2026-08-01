@@ -140,10 +140,18 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
       // Prioridad 1: vinculado por itemId. Prioridad 2: fuzzy por nombre.
       let match = ing.itemId ? items.find((it) => it.id === ing.itemId) : null;
       if (!match) {
-        match = items.find((it) =>
-          it.name.toLowerCase().includes(ing.name.toLowerCase().split(' ')[0]) ||
-          ing.name.toLowerCase().includes(it.name.toLowerCase().split(' ')[0])
-        );
+        // Sin guarda, un ingrediente sin nombre daría includes('') === true y
+        // descontaría del primer item del inventario. Mismo patrón que usa
+        // util/stock.js para este mismo match difuso.
+        const ingLower = (ing.name || '').toLowerCase();
+        const q = ingLower.split(' ')[0];
+        if (q) {
+          match = items.find((it) => {
+            const n = (it.name || '').toLowerCase();
+            if (!n) return false;
+            return n.includes(q) || ingLower.includes(n.split(' ')[0]);
+          });
+        }
       }
       if (!match) {
         missing.push(ing);
