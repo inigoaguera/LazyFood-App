@@ -94,10 +94,20 @@ export async function cacheDelete(table, hid, id) {
   }
 }
 export async function cacheClearHousehold(hid) {
-  const tables = ['items', 'recipes', 'shopping', 'expenses', 'menuPlan', 'recipeDetails'];
+  // `categories` faltaba en la lista y se quedaba huérfana.
+  const tables = ['items', 'recipes', 'shopping', 'expenses', 'recipeDetails', 'categories'];
   for (const t of tables) {
     await db.table(t).where({ householdId: hid }).delete();
   }
+  // menuPlan tiene clave compuesta [householdId+slot] y no un índice suelto por
+  // householdId, así que se filtra a mano por clave primaria.
+  const slots = await db.menuPlan.where('[householdId+slot]')
+    .between([hid, Dexie.minKey], [hid, Dexie.maxKey])
+    .primaryKeys();
+  if (slots.length) await db.menuPlan.bulkDelete(slots);
+  await db.settings.delete(`lastSync:${hid}`);
+  await db.settings.delete(`aiRecipes:${hid}`);
+  await db.settings.delete(`antojos:${hid}`);
 }
 
 // ─── Quita la antigua ensureSeed: ya no sembramos local. ─────────────

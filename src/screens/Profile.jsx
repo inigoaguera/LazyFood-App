@@ -10,6 +10,7 @@ import {
 } from '../api/session.js';
 import { bulkImport, create as resourceCreate, remove as resourceRemove } from '../api/resources.js';
 import { syncHousehold } from '../api/sync.js';
+import { cacheClearHousehold } from '../db.js';
 import { buildSamplePayload } from '../data/seed.js';
 import { useCategories } from '../util/categories.js';
 import InviteShare from './InviteShare.jsx';
@@ -46,6 +47,7 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
     if (!confirm(`¿Salir de "${household.name}"? Perderás el acceso a esta casa.`)) return;
     try {
       await leaveOrKick(household.id, me.id);
+      await cacheClearHousehold(household.id);
       toast('Saliste de la casa');
       onSwitchHousehold?.();
     } catch (e) { toast(e?.message || 'Error', 'error'); }
@@ -77,6 +79,7 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
     if (!confirm('Última oportunidad. ¿Seguro?')) return;
     try {
       await deleteHousehold(household.id);
+      await cacheClearHousehold(household.id);
       toast('Casa borrada');
       onSwitchHousehold?.();
     } catch (e) { toast(e?.message || 'Error', 'error'); }
