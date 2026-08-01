@@ -64,9 +64,14 @@ export async function patchHousehold(request, env, cors, auth, hid) {
   if (typeof body.onboarded === 'boolean') { updates.push('onboarded=?'); args.push(body.onboarded ? 1 : 0); }
   if (typeof body.budget === 'number') { updates.push('budget=?'); args.push(body.budget); }
   if (!updates.length) return json({ ok: true }, 200, cors);
-  // name/color sólo owner
-  if ((body.name || body.color) && role !== 'owner') {
+  // name/color sólo owner. Se mira la PRESENCIA de la clave, no su verdad:
+  // con truthiness, {"name": ""} pasaba el typeof de arriba y esquivaba este
+  // 403 por ser cadena falsy, dejando el nombre de la casa en blanco.
+  if (('name' in body || 'color' in body) && role !== 'owner') {
     return errorResponse('FORBIDDEN', 'Sólo el owner puede cambiar nombre/color', 403, cors);
+  }
+  if ('name' in body && !String(body.name).trim()) {
+    return errorResponse('BAD_NAME', 'La casa necesita un nombre', 400, cors);
   }
   args.push(hid);
   await env.lazyfood_db.prepare(
