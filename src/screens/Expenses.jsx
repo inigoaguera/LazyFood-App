@@ -206,12 +206,15 @@ function filterByPeriod(expenses, period) {
   const yearStart = `${now.getFullYear()}-01-01`;
   const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
+  // Cota superior en "hoy": sin ella, un gasto con fecha futura (fácil de crear
+  // sin querer en el editor) contaba en "esta semana" y en "este año", y
+  // "semana" se tragaba además la semana siguiente entera.
   return expenses.filter((e) => {
     if (!e.date) return false;
     if (period === 'today') return e.date === today;
-    if (period === 'week') return e.date >= sw;
+    if (period === 'week') return e.date >= sw && e.date <= today;
     if (period === 'month') return e.date.startsWith(monthStr);
-    if (period === 'year') return e.date >= yearStart;
+    if (period === 'year') return e.date >= yearStart && e.date <= today;
     return true;
   });
 }

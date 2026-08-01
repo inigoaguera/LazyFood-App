@@ -46,7 +46,9 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
 
   const save = async () => {
     if (!store.trim()) { toast('Pon dónde compraste', 'error'); return; }
-    if (!total || Number.isNaN(total)) { toast('Pon un total válido', 'error'); return; }
+    // 0 es un total válido: una compra pagada entera con vale o puntos. El
+    // `!total` de antes lo rechazaba junto con el vacío.
+    if (!Number.isFinite(total) || total < 0) { toast('Pon un total válido', 'error'); return; }
     setBusy(true);
     try {
       const payload = {
