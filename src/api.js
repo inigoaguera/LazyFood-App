@@ -60,6 +60,16 @@ const JSON_GEN_DEFAULTS = {
 // responseSchema la forma de la respuesta la garantiza la API, no el prompt.
 const jsonConfig = (schema, extra = {}) => ({ ...JSON_GEN_DEFAULTS, responseSchema: schema, ...extra });
 
+// Las tres llamadas que generan recetas suben a 'medium'. No es por creatividad
+// sino por capacidad de obedecer una restricción negativa: "no repitas la base
+// de ninguna de estas quince". Medido con seis reemplazos seguidos y la misma
+// lista de evitar:
+//   minimal → tres de seis eran el mismo arroz con pollo, y colaba arroz con
+//             leche como cena pese a la regla explícita de "no postres".
+//   medium  → seis platos distintos, ningún postre.
+// Cuesta: el reemplazo pasa de ~3 s a ~6,4 s.
+const PENSANDO_RECETAS = { thinkingConfig: { thinkingLevel: 'medium' } };
+
 // Las recetas a evitar se le dan CON SU BASE de ingredientes, no sólo el nombre.
 // Medido: pidiéndole que evite nombres, el modelo cambia el nombre y devuelve el
 // mismo plato — cinco reemplazos seguidos oscilaban entre huevo+tomate y
@@ -158,7 +168,7 @@ Tienen que ser comidas/cenas completas, no snacks. Añade pasos breves (3-6) par
 
   return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: jsonConfig(SUGGEST_RECIPES_SCHEMA, { temperature: 0.8 }),
+    generationConfig: jsonConfig(SUGGEST_RECIPES_SCHEMA, { temperature: 0.8, ...PENSANDO_RECETAS }),
   });
 }
 
@@ -297,7 +307,7 @@ Si el inventario está vacío o casi vacío, devuelve arrays vacíos pero respet
 
   return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: jsonConfig(HUB_SCHEMA, { temperature: 0.85 }),
+    generationConfig: jsonConfig(HUB_SCHEMA, { temperature: 0.85, ...PENSANDO_RECETAS }),
   });
 }
 
@@ -347,7 +357,7 @@ no "Arroz: 1 kg".`;
 
   return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: jsonConfig(REPLACEMENT_SCHEMA, { temperature: 0.9 }),
+    generationConfig: jsonConfig(REPLACEMENT_SCHEMA, { temperature: 0.9, ...PENSANDO_RECETAS }),
   });
 }
 
