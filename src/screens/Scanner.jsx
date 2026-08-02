@@ -12,6 +12,18 @@ import { makeLine, linesTotal } from '../util/expenseLines.js';
 const SCAN_CATS = ['lacteo', 'verdura', 'fruta', 'carne', 'pescado', 'pasta', 'conserva', 'salsa', 'especia', 'bebida', 'snack', 'congelado'];
 const normalizeCat = (c) => (SCAN_CATS.includes(c) ? c : 'conserva');
 
+// La fecha la lee la IA de la foto y se equivoca de año más de lo que parece
+// (un ticket de hoy llegó como 2020-06-26). Una fecha absurda manda el gasto a
+// un mes donde nadie lo va a buscar: Gastos abre en "Este mes" y no aparece.
+// Fuera de la ventana razonable se descarta y se usa hoy, avisando.
+function normalizeScanDate(raw) {
+  const today = localISODate();
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return { date: today, corrected: false };
+  const unAnoAtras = localISODate(new Date(Date.now() - 365 * 86400000));
+  if (raw > today || raw < unAnoAtras) return { date: today, corrected: true };
+  return { date: raw, corrected: false };
+}
+
 export default function Scanner({ onBack, onDone }) {
   const { pal, fonts, currentHouseholdMeta } = useLF();
   const hid = currentHouseholdMeta?.id;
@@ -104,9 +116,11 @@ export default function Scanner({ onBack, onDone }) {
         };
       });
       setDetected(items);
+      const fecha = normalizeScanDate(result.date);
       setMeta({
         store: result.store, total: result.total,
-        savedOnDiscounts: result.savedOnDiscounts, date: result.date,
+        savedOnDiscounts: result.savedOnDiscounts,
+        date: fecha.date, dateCorrected: fecha.corrected,
       });
       setPhase('results');
     } catch (e) {
@@ -261,24 +275,51 @@ export default function Scanner({ onBack, onDone }) {
         {(meta.store || effectiveTotal != null) && (
           <div style={{
             padding: 12, background: pal.primarySoft, borderRadius: 12,
-            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
+            marginBottom: 14,
           }}>
-            <span style={{ fontSize: 22 }}>🎉</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: pal.primary }}>
-                {meta.store || 'Supermercado'}{effectiveTotal != null ? ` · ${effectiveTotal.toFixed(2)} €` : ''}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 22 }}>🎉</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: pal.primary }}>
+                  {meta.store || 'Supermercado'}{effectiveTotal != null ? ` · ${effectiveTotal.toFixed(2)} €` : ''}
+                </div>
+                {totalIsEstimated && (
+                  <div style={{ fontSize: 11, color: pal.primary, opacity: 0.8 }}>
+                    No he leído el total en el ticket: lo he sumado de los productos. Puedes corregirlo luego en Gastos.
+                  </div>
+                )}
+                {meta.savedOnDiscounts != null && (
+                  <div style={{ fontSize: 11, color: pal.primary, opacity: 0.8 }}>
+                    Ahorraste {Number(meta.savedOnDiscounts).toFixed(2)} € con ofertas
+                  </div>
+                )}
               </div>
-              {totalIsEstimated && (
-                <div style={{ fontSize: 11, color: pal.primary, opacity: 0.8 }}>
-                  No he leído el total en el ticket: lo he sumado de los productos. Puedes corregirlo luego en Gastos.
-                </div>
-              )}
-              {meta.savedOnDiscounts != null && (
-                <div style={{ fontSize: 11, color: pal.primary, opacity: 0.8 }}>
-                  Ahorraste {Number(meta.savedOnDiscounts).toFixed(2)} € con ofertas
-                </div>
-              )}
             </div>
+            {/* La fecha decide en qué mes aparece el gasto. Si no se puede ver
+                ni corregir aquí, un año mal leído lo esconde para siempre. */}
+            <div style={{
+              marginTop: 10, paddingTop: 10, borderTop: `0.5px solid ${pal.primary}33`,
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: pal.primary, flexShrink: 0 }}>
+                Fecha de la compra
+              </span>
+              <input
+                type="date"
+                value={meta.date || ''}
+                max={localISODate()}
+                onChange={(e) => setMeta((m) => ({ ...m, date: e.target.value, dateCorrected: false }))}
+                style={{
+                  flex: 1, padding: '7px 10px', fontSize: 13,
+                  background: pal.bg, border: `1px solid ${pal.line}`,
+                  borderRadius: 8, color: pal.ink, outline: 'none',
+                }} />
+            </div>
+            {meta.dateCorrected && (
+              <div style={{ fontSize: 11, color: pal.primary, opacity: 0.8, marginTop: 6 }}>
+                La fecha del ticket no me cuadraba, he puesto la de hoy. Cámbiala si la compra fue otro día.
+              </div>
+            )}
           </div>
         )}
         {detected.map((d, i) => (
