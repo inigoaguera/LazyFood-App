@@ -10,7 +10,7 @@ import { RECIPE_THUMBS, RecipeThumb } from '../data/recipeThumbs.jsx';
 import RecipeEditor from './RecipeEditor.jsx';
 import { recipeStockStatus, stockBadge } from '../util/stock.js';
 import RecipeFilters, { applyFilters, countActive } from './RecipeFilters.jsx';
-import { inventoryForPrompt } from '../util/aiInventory.js';
+import { inventoryForPrompt, pantrySignature } from '../util/aiInventory.js';
 
 // Re-exports para mantener compat con código que ya importa de aquí.
 export { RECIPE_THUMBS, RecipeThumb };
@@ -56,15 +56,42 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
   const [aiBusy, setAiBusy] = useState(false); // true durante regenerar TODO
   const [replacingSlots, setReplacingSlots] = useState(() => new Set()); // "effortless:2" en marcha
 
+  // Recetas descartadas con la ×. Se guardan junto a la firma de la despensa:
+  // mientras el conjunto de productos no cambie no vuelven a proponerse, y en
+  // cuanto entra compra nueva se empieza de cero (con otra despensa ese mismo
+  // plato puede apetecer).
+  const [rechazadas, setRechazadas] = useState([]);
+
   useEffect(() => {
     if (!hid) return;
     let cancelled = false;
     (async () => {
       const cached = await getSetting(`aiRecipes:${hid}`);
       if (cached && !cancelled) setAiData(cached);
+      const desc = await getSetting(`descartadas:${hid}`);
+      if (!cancelled && desc?.firma && desc.firma === pantrySignature(items)) {
+        setRechazadas(desc.recetas || []);
+      }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hid]);
+
+  // Lo que no queremos que vuelva: lo que está en pantalla ahora + lo descartado.
+  const construirAvoid = React.useCallback((data) => {
+    const enPantalla = [
+      ...(data?.effortless || []), ...(data?.chef || []), ...(data?.oneOff || []),
+    ].filter((r) => r?.name).map((r) => ({ name: r.name, uses: r.uses }));
+    const vistas = new Set(enPantalla.map((r) => r.name.toLowerCase()));
+    return [...enPantalla, ...rechazadas.filter((r) => !vistas.has((r.name || '').toLowerCase()))];
+  }, [rechazadas]);
+
+  const recordarDescarte = async (receta) => {
+    if (!receta?.name) return;
+    const siguiente = [...rechazadas, { name: receta.name, uses: receta.uses }].slice(-40);
+    setRechazadas(siguiente);
+    await setSetting(`descartadas:${hid}`, { firma: pantrySignature(items), recetas: siguiente });
+  };
 
   // Reemplaza una receta de IA por otra distinta. La IA recibe la lista de
   // todas las que ya están mostrándose para no repetir.
@@ -75,11 +102,8 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
     // Marcar el slot como "dándole otra vuelta..."
     setReplacingSlots((prev) => { const n = new Set(prev); n.add(slotKey); return n; });
     const inv = inventoryForPrompt(items);
-    const avoid = [
-      ...(aiData.effortless || []).map((r) => r.name),
-      ...(aiData.chef || []).map((r) => r.name),
-      ...(aiData.oneOff || []).map((r) => r.name),
-    ].filter(Boolean);
+    const descartada = (aiData[section] || [])[indexInSection];
+    const avoid = construirAvoid(aiData);
     try {
       const fresh = await suggestReplacementRecipe({ inventory: inv, section, avoid });
       if (!fresh?.name) throw new Error('No vino nada');
@@ -88,6 +112,9 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
       next[section][indexInSection] = fresh;
       setAiData(next);
       await setSetting(`aiRecipes:${hid}`, next);
+      // La × es la señal más clara de "esto no me gusta" y hasta ahora se tiraba:
+      // la receta salía de la lista y podía volver en el siguiente reemplazo.
+      await recordarDescarte(descartada);
     } catch (e) {
       toast(e?.message || 'No pude reemplazar', 'error');
     } finally {
@@ -101,12 +128,16 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
       toast('Añade items o importa datos para que pueda sugerir', 'error');
       return;
     }
+    // Se captura ANTES de vaciar: es lo que hay que decirle que no repita.
+    const avoid = construirAvoid(aiData);
     // Vaciamos las sugerencias actuales y mostramos la tarjeta global de "pensando"
     setAiData(null);
     setAiBusy(true);
     try {
       const inv = inventoryForPrompt(items);
-      const result = await suggestRecipesForHub({ inventory: inv });
+      // Sin esta lista, mismo inventario y mismo prompt devolvían casi las
+      // mismas quince recetas cada vez que pulsabas Inspírame.
+      const result = await suggestRecipesForHub({ inventory: inv, avoid });
       // Derivar effort = tools.length (mín 1) para que el icono 🍳 cuadre con la lista de instrumentos
       const enrichEffort = (arr) => (arr || []).map((r) => ({
         ...r,

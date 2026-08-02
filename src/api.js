@@ -60,6 +60,22 @@ const JSON_GEN_DEFAULTS = {
 // responseSchema la forma de la respuesta la garantiza la API, no el prompt.
 const jsonConfig = (schema, extra = {}) => ({ ...JSON_GEN_DEFAULTS, responseSchema: schema, ...extra });
 
+// Las recetas a evitar se le dan CON SU BASE de ingredientes, no sólo el nombre.
+// Medido: pidiéndole que evite nombres, el modelo cambia el nombre y devuelve el
+// mismo plato — cinco reemplazos seguidos oscilaban entre huevo+tomate y
+// pasta+atún con cinco títulos distintos.
+function formatAvoid(avoid = []) {
+  return avoid
+    .map((a) => {
+      if (typeof a === 'string') return `- ${a}`;
+      if (!a?.name) return null;
+      const base = (a.uses || []).slice(0, 4).join(', ');
+      return `- ${a.name}${base ? ` (base: ${base})` : ''}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
 async function callAi(payload) {
   const householdId = await getCurrentHousehold();
   if (!householdId) throw new Error('Sin casa activa');
@@ -208,7 +224,7 @@ Responde SÓLO con JSON válido sin markdown:
 
 // Sugiere recetas para el hub de Recetas, con 3 secciones:
 // effortless = listas con lo que tienes, simples; chef = más elaboradas; oneOff = falta 1 ingrediente.
-export async function suggestRecipesForHub({ inventory }) {
+export async function suggestRecipesForHub({ inventory, avoid = [] }) {
   const prompt = `Eres un chef que propone recetas con lo que el usuario tiene en su nevera/despensa.
 
 Inventario actual:
@@ -219,11 +235,22 @@ Sugiere 15 recetas en total, repartidas en 3 grupos:
 2. chef (5): se preparan con lo que tiene pero más elaboradas. Tiempo 30-60 min.
 3. oneOff (5): le falta SÓLO 1 ingrediente concreto que NO tiene en el inventario.
 
-REGLA CRÍTICA: TODAS deben ser comidas o cenas completas que llenen, NO snacks ni picoteos. Una tostada con jamón no vale. Una tostada con jamón + huevo + ensalada sí. La idea es que con esa receta cenas/comes, no que es un "tentempié".
+REGLA CRÍTICA: TODAS deben ser comidas o cenas completas que llenen, NO snacks ni picoteos ni postres. Una tostada con jamón no vale. Una tostada con jamón + huevo + ensalada sí. La idea es que con esa receta cenas/comes, no que es un "tentempié".
+
+VARIEDAD — esto es tan importante como lo anterior:
+- Las 15 tienen que ser platos DISTINTOS entre sí, no el mismo plato con otro nombre. "Pasta con atún y tomate" y "Espaguetis rápidos con atún" son la misma cena: no valen las dos.
+- Reparte las técnicas: sartén, horno, guiso, plancha, hervido, crudo/ensalada, sopa. Que no sean quince sartenes.
+- Varía la base: no montes doce recetas sobre huevo y pasta porque sean lo más fácil.
+- Da por hecho que tiene sal, aceite, vinagre, pimienta y especias básicas: no hace falta que aparezcan en el inventario.
+- Que apetezca comérselas. Cocina de casa, pero con gracia: no te quedes siempre en lo más obvio salvo que el inventario no dé para más.${avoid.length ? `
+
+YA LE HAS PROPUESTO O HA DESCARTADO ESTAS (con su base de ingredientes):
+${formatAvoid(avoid)}
+No repitas ninguna NI otra versión con la misma base. Cambiarle el nombre no cuenta: si ahí ya hay algo de huevo con tomate, cambia de ingrediente principal o de técnica.` : ''}
 
 Para cada receta dame:
 - name, time (minutos), img (uno de: pasta, tortilla, caprese, bocata, huevos, tostada, risotto, curry, salmon, paella, guaca, pizza, burger, taco, ramen, sopa, ensalada, pollo, carne, sushi, pancakes, donut, cake, fruta, smoothie, cafe, helado, picante, bento)
-- uses: lista de ingredientes que usa (3-6 nombres cortos)
+- uses: 3-6 nombres CORTOS de ingrediente, sin cantidades ni unidades — "arroz", no "Arroz: 1 kg"
 - tools: lista de instrumentos GRANDES que se manchan y hay que fregar a mano (sartén honda, olla, batidora, tabla de cortar, horno, vaporera...). NO incluyas cubiertos, vasos ni platos. Para effortless típicamente 1, para chef 2-4.
 - steps: lista de 3-6 pasos breves para preparar la receta.
 - why: 1 frase corta del por qué encaja (sólo si aplica)
@@ -286,8 +313,15 @@ export async function suggestReplacementRecipe({ inventory, section, avoid }) {
 
 ${sectionGuide[section] || ''}
 
-Evita repetir estas recetas (el usuario las ha descartado o ya las ve):
-${avoid.length ? avoid.map((n) => `- ${n}`).join('\n') : '(ninguna)'}
+El usuario YA HA VISTO o ha DESCARTADO estas, con su base de ingredientes:
+${avoid.length ? formatAvoid(avoid) : '(ninguna)'}
+
+No propongas ninguna de ellas ni una variación de la misma base: cambiarle el
+nombre NO cuenta. "Pasta con atún y tomate" y "Espaguetis rápidos con atún" son
+el mismo plato. Si en esa lista ya hay algo de huevo con tomate, o de pasta con
+atún, vete a otro ingrediente principal o a otra técnica (horno, guiso, plancha,
+hervido, crudo, sopa). Da por hecho que tiene sal, aceite, vinagre, pimienta y
+especias básicas aunque no estén en el inventario.
 
 Inventario actual:
 ${inventory}
@@ -305,7 +339,11 @@ Responde SÓLO con JSON válido sin markdown:
 }
 
 img debe ser una de: pasta, tortilla, caprese, bocata, huevos, tostada, risotto, curry, salmon, paella, guaca, pizza, burger, taco, ramen, sopa, ensalada, pollo, carne, sushi, pancakes, donut, cake, fruta, smoothie, cafe, helado, picante, bento.
-La receta debe ser una comida/cena completa, no un snack.`;
+
+Tiene que ser una comida o cena COMPLETA que llene: nada de snacks, picoteos ni
+postres. El arroz con leche o unas natillas no son una cena.
+uses: 3-6 nombres CORTOS de ingrediente, sin cantidades ni unidades — "arroz",
+no "Arroz: 1 kg".`;
 
   return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],

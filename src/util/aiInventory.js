@@ -10,6 +10,22 @@ import { expiryStatus } from './expires.js';
 // caducada hacía 86 días anunciada como "caduca en 3d").
 //
 // `expiryStatus` calcula el dato bueno a partir de expiresAt/frozenAt/openedAt.
+// Firma de la despensa: el CONJUNTO de productos, sin cantidades.
+//
+// Sirve para caducar la lista de recetas descartadas. Con la misma despensa no
+// tiene sentido volver a proponerte lo que ya has rechazado; en cuanto entra
+// compra nueva (o se acaba algo del todo) el juego cambia y ese mismo plato
+// puede apetecerte, así que se empieza de cero.
+// Se ignoran las cantidades a propósito: gastar media botella de leche no es
+// "cambiar la despensa".
+export function pantrySignature(items = []) {
+  return items
+    .map((it) => (it.name || '').trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join('|');
+}
+
 export function inventoryForPrompt(items = []) {
   return items.map((it) => {
     const qty = it.type === 'continuous' ? `${it.fill}% (${it.unit})` : `${it.qty} ${it.unit}`;
