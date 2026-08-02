@@ -1,6 +1,10 @@
 // Cliente IA — ahora pasa por el Worker autenticado en /ai con JWT + householdId.
 import { api, proxyConfigured as _proxyConfigured } from './api/client.js';
 import { getCurrentHousehold } from './api/session.js';
+import {
+  SUGGEST_RECIPES_SCHEMA, RECEIPT_SCHEMA, HUB_SCHEMA,
+  REPLACEMENT_SCHEMA, SCALE_SCHEMA, autoPlanSchema,
+} from './aiSchemas.js';
 
 const MODEL = 'gemini-2.5-flash';
 export const proxyConfigured = _proxyConfigured;
@@ -28,7 +32,9 @@ const JSON_GEN_DEFAULTS = {
   maxOutputTokens: 8192,
   thinkingConfig: { thinkingBudget: 0 },
 };
-const jsonConfig = (extra = {}) => ({ ...JSON_GEN_DEFAULTS, ...extra });
+// `schema` va aparte para que quede claro que no es opcional: con
+// responseSchema la forma de la respuesta la garantiza la API, no el prompt.
+const jsonConfig = (schema, extra = {}) => ({ ...JSON_GEN_DEFAULTS, responseSchema: schema, ...extra });
 
 async function callAi(payload) {
   const householdId = await getCurrentHousehold();
@@ -97,7 +103,7 @@ Tienen que ser comidas/cenas completas, no snacks. Añade pasos breves (3-6) par
 
   return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: jsonConfig({ temperature: 0.8 }),
+    generationConfig: jsonConfig(SUGGEST_RECIPES_SCHEMA, { temperature: 0.8 }),
   });
 }
 
@@ -150,7 +156,7 @@ Responde SÓLO con JSON válido sin markdown:
         { inlineData: { mimeType, data: imageBase64 } },
       ],
     }],
-    generationConfig: jsonConfig({ temperature: 0.2 }),
+    generationConfig: jsonConfig(RECEIPT_SCHEMA, { temperature: 0.2 }),
   });
 }
 
@@ -218,7 +224,7 @@ Si el inventario está vacío o casi vacío, devuelve arrays vacíos pero respet
 
   return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: jsonConfig({ temperature: 0.85 }),
+    generationConfig: jsonConfig(HUB_SCHEMA, { temperature: 0.85 }),
   });
 }
 
@@ -257,7 +263,7 @@ La receta debe ser una comida/cena completa, no un snack.`;
 
   return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: jsonConfig({ temperature: 0.9 }),
+    generationConfig: jsonConfig(REPLACEMENT_SCHEMA, { temperature: 0.9 }),
   });
 }
 
@@ -292,12 +298,19 @@ Mantén el mismo orden y nº de ingredientes que la entrada.`;
 
   return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: jsonConfig({ temperature: 0.3 }),
+    generationConfig: jsonConfig(SCALE_SCHEMA, { temperature: 0.3 }),
   });
 }
 
 export async function autoPlanMenu({ inventory, recipes, currentPlan, days, meals }) {
   const recipeList = recipes.map((r) => `- [${r.id}] ${r.name} (${r.time}m, esfuerzo ${r.effort}/3)`).join('\n');
+  // Sólo se ofrecen los huecos que están libres: el esquema los acota por enum,
+  // así que el modelo no puede pisar una elección tuya ni inventarse un hueco.
+  const freeSlots = [];
+  for (const d of days) for (const m of meals) {
+    const slot = `${d}-${m}`;
+    if (!currentPlan[slot]) freeSlots.push(slot);
+  }
   const prompt = `Planifica las comidas y cenas de la semana usando recetas que el usuario YA tiene guardadas.
 Prioriza ingredientes que caduquen pronto y evita repetir la misma receta dos días seguidos.
 
@@ -307,23 +320,20 @@ ${inventory}
 Recetas disponibles:
 ${recipeList}
 
-Slots vacíos a rellenar (mantén estos para no sobrescribir las elecciones del usuario):
+Ya ocupados (NO los toques):
 ${Object.entries(currentPlan).filter(([, v]) => v).map(([k, v]) => `${k} = ${v}`).join('\n') || '(ninguno)'}
 
-Días: ${days.join(', ')}
-Comidas: ${meals.join(', ')}
+Huecos LIBRES que puedes rellenar:
+${freeSlots.join(', ') || '(ninguno)'}
 
-Responde SÓLO con JSON válido:
-{
-  "plan": {
-    "mon-lunch": "<recipeId>",
-    "mon-dinner": "<recipeId>"
-  }
-}
-Sólo asigna a slots VACÍOS. Usa los IDs exactos de la lista de recetas.`;
+Devuelve una lista de asignaciones, cada una con su hueco y el id exacto de una
+receta de la lista. No repitas hueco ni asignes a uno que no esté libre.`;
 
   return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: jsonConfig({ temperature: 0.6 }),
+    generationConfig: jsonConfig(
+      autoPlanSchema(freeSlots, recipes.map((r) => r.id)),
+      { temperature: 0.6 },
+    ),
   });
 }

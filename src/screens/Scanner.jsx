@@ -52,13 +52,39 @@ export default function Scanner({ onBack, onDone }) {
     ? Number(meta.total)
     : (linesSum > 0 ? Math.round(linesSum * 100) / 100 : null);
 
+  // Cuadre: si las líneas no suman el total del ticket, la IA se dejó productos
+  // o leyó mal un precio. Sin este aviso la diferencia se cuela callando en la
+  // categoría "Otros" del desglose y el gasto parece correcto.
+  // Se tolera un margen porque muchos tickets llevan bolsas, redondeos o
+  // descuentos globales que no son líneas de producto.
+  const descuadre = (() => {
+    if (meta.total == null || linesSum <= 0) return null;
+    const total = Number(meta.total);
+    if (!Number.isFinite(total) || total <= 0) return null;
+    const diff = +(total - linesSum).toFixed(2);
+    const margen = Math.max(1, total * 0.05);
+    if (Math.abs(diff) <= margen) return null;
+    return { diff: Math.abs(diff), faltan: diff > 0 };
+  })();
+
   useEffect(() => {
     if (phase !== 'camera') return;
     let active = true;
     (async () => {
       try {
+        // Sin pedir resolución, el navegador entrega su valor por defecto:
+        // normalmente 640×480, con suerte 720p. Un ticket tiene 40-60 líneas, y
+        // a esa resolución cada línea son unos pocos píxeles de alto: le
+        // estábamos pidiendo a la IA que leyera una foto mala.
+        // `ideal` nunca falla — si la cámara no llega, entrega lo mejor que
+        // tenga. Con `exact` sí podría negarse a abrir.
         const s = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } }, audio: false,
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 2560 },
+            height: { ideal: 1440 },
+          },
+          audio: false,
         });
         if (!active) { s.getTracks().forEach((t) => t.stop()); return; }
         setStream(s);
@@ -88,7 +114,10 @@ export default function Scanner({ onBack, onDone }) {
     canvas.width = v.videoWidth;
     canvas.height = v.videoHeight;
     canvas.getContext('2d').drawImage(v, 0, 0);
-    return canvas.toDataURL('image/jpeg', 0.85);
+    // 0.92 en vez de 0.85: el texto es el peor caso para JPEG, porque los
+    // artefactos de compresión se comen justo los bordes de las letras finas.
+    // El archivo pesa más, pero sigue muy por debajo del techo del proxy.
+    return canvas.toDataURL('image/jpeg', 0.92);
   };
 
   const handleScan = async (dataUrl) => {
@@ -128,6 +157,15 @@ export default function Scanner({ onBack, onDone }) {
       setPhase('camera');
     }
   };
+
+  // Si la IA se dejó un producto, antes no había forma de meterlo desde aquí:
+  // sólo se podía editar o borrar lo que ella hubiera visto, y arreglarlo
+  // obligaba a ir luego a Gastos a mano.
+  const addDetectedLine = () => setDetected((xs) => [...xs, {
+    name: '', emoji: '🛒', category: 'conserva', cat: 'conserva',
+    qty: 1, unit: 'uds', type: 'discrete', loc: 'pantry',
+    price: null, expiresAt: null, _nuevo: true,
+  }]);
 
   const onShutter = () => {
     haptic(15);
@@ -322,6 +360,29 @@ export default function Scanner({ onBack, onDone }) {
             )}
           </div>
         )}
+
+        {descuadre && (
+          <div style={{
+            padding: 12, marginBottom: 14, borderRadius: 12,
+            background: pal.dangerSoft, display: 'flex', gap: 10, alignItems: 'flex-start',
+          }}>
+            <span style={{ fontSize: 20 }}>⚠️</span>
+            <div style={{ flex: 1, fontSize: 12, color: pal.danger, lineHeight: 1.45 }}>
+              <strong>Las cuentas no me cuadran por {descuadre.diff.toFixed(2)} €.</strong>{' '}
+              {descuadre.faltan
+                ? 'Los productos suman menos que el total del ticket: puede que me haya dejado alguna línea. Repásalo y añade lo que falte.'
+                : 'Los productos suman más que el total del ticket: puede que haya duplicado una línea o leído mal un precio.'}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+          <button onClick={addDetectedLine} style={{
+            background: pal.primarySoft, color: pal.primary,
+            border: 'none', borderRadius: 10, padding: '7px 14px',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}>+ Añadir producto</button>
+        </div>
         {detected.map((d, i) => (
           <ScanItemRow key={i} item={d} pal={pal} fonts={fonts}
             onChange={(patch) => {
@@ -348,7 +409,9 @@ export default function Scanner({ onBack, onDone }) {
 
 // ─── Editor por línea del escaneo ────────────────────────────────────
 const ScanItemRow = ({ item, pal, fonts, onChange, onRemove }) => {
-  const [open, setOpen] = React.useState(false);
+  // Las líneas añadidas a mano abren desplegadas: no tienen nada que enseñar
+  // plegadas y lo primero que hay que hacer es escribirles el nombre.
+  const [open, setOpen] = React.useState(!!item._nuevo);
   const cat = LF_CATEGORIES.find((c) => c.id === item.cat || c.id === item.category) || LF_CATEGORIES[0];
   const locLabel = { fridge: 'Nevera', freezer: 'Congelador', pantry: 'Despensa' }[item.loc] || 'Despensa';
   return (

@@ -85,11 +85,18 @@ export default function Menu({ onBack, onOpenRecipe }) {
         inventory: inv, recipes, currentPlan: plan,
         days: DAYS.map((d) => d.id), meals: MEALS.map((m) => m.id),
       });
-      const newPlan = result?.plan || {};
+      // La IA devuelve una lista de asignaciones (antes era un objeto con los
+      // huecos como claves, que no se puede describir con un esquema).
+      const assignments = Array.isArray(result?.assignments) ? result.assignments : [];
       let count = 0;
-      for (const [slot, rid] of Object.entries(newPlan)) {
+      const usados = new Set();
+      for (const a of assignments) {
+        const slot = a?.slot;
+        const rid = a?.recipeId;
+        if (!slot || !rid || usados.has(slot)) continue;
         if (!plan[slot] && recipesById[rid]) {
           await cloudSetMenuSlot(hid, slot, rid);
+          usados.add(slot);
           count++;
         }
       }
