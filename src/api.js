@@ -6,7 +6,21 @@ import {
   REPLACEMENT_SCHEMA, SCALE_SCHEMA, autoPlanSchema,
 } from './aiSchemas.js';
 
-const MODEL = 'gemini-2.5-flash';
+// Alias dinámico: Google lo reapunta al Flash más reciente (hoy resuelve a
+// gemini-3.6-flash, comprobado en el modelVersion de la respuesta). Se usa el
+// alias en vez de un id fijo para no quedarnos anclados a un modelo viejo sin
+// enterarnos; avisan por email con dos semanas de antelación si el cambio rompe.
+const MODEL = 'gemini-flash-latest';
+// Respaldo. Cubre dos casos medidos:
+//   1. El alias se mueve a un modelo incompatible. Pasó al saltar de 2.5 a 3:
+//      thinkingBudget dejó de valer y devolvía 400.
+//   2. El modelo más nuevo se satura. Google responde "experiencing high
+//      demand" y la llamada se pierde.
+// Flash-Lite es de la misma generación (mismo parámetro de esfuerzo), Google lo
+// recomienda justo para extracción estructurada, y es el que más peticiones
+// gratuitas permite. Medido el mismo día: ~1 s constante frente a los 40-60 s
+// erráticos del Flash grande.
+const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
 export const proxyConfigured = _proxyConfigured;
 
 // Error propio para poder distinguir "la IA contestó algo que no entiendo" de
@@ -21,16 +35,22 @@ export class AiParseError extends Error {
   }
 }
 
-// gemini-2.5-flash gasta un presupuesto de razonamiento VARIABLE antes de emitir
-// la respuesta visible (medido: entre 623 y 1.655 tokens para el mismo prompt).
-// Cuando se dispara, la salida se trunca a media frase y JSON.parse revienta:
-// ése es el fallo intermitente de la IA. Estas llamadas piden JSON estructurado
-// y no necesitan razonamiento extendido, así que se desactiva y se fija un
-// techo de salida holgado.
+// El modelo gasta un presupuesto de razonamiento antes de emitir la respuesta
+// visible, y cuando se dispara la salida se trunca a media frase y JSON.parse
+// revienta: ése era el fallo intermitente de la IA. Estas llamadas piden JSON
+// estructurado y no necesitan razonar, así que van al mínimo con un techo de
+// salida holgado.
+//
+// OJO con el nombre del parámetro, que cambió con Gemini 3 y está medido:
+//   thinkingConfig: { thinkingBudget: 0 }      → 400 INVALID_ARGUMENT
+//   generationConfig.thinkingLevel (plano)     → 400, campo desconocido
+//   thinkingConfig: { thinkingLevel: 'minimal' } → OK, thoughts = 0
+// Y sin ponerlo, el esfuerzo por defecto es 'medium': una llamada trivial se
+// comió los 60 s de timeout del proxy.
 const JSON_GEN_DEFAULTS = {
   responseMimeType: 'application/json',
   maxOutputTokens: 8192,
-  thinkingConfig: { thinkingBudget: 0 },
+  thinkingConfig: { thinkingLevel: 'minimal' },
 };
 // `schema` va aparte para que quede claro que no es opcional: con
 // responseSchema la forma de la respuesta la garantiza la API, no el prompt.
@@ -39,7 +59,22 @@ const jsonConfig = (schema, extra = {}) => ({ ...JSON_GEN_DEFAULTS, responseSche
 async function callAi(payload) {
   const householdId = await getCurrentHousehold();
   if (!householdId) throw new Error('Sin casa activa');
-  return api('/ai', { method: 'POST', body: { model: MODEL, payload, householdId } });
+  const body = { model: MODEL, payload, householdId };
+  try {
+    return await api('/ai', { method: 'POST', body });
+  } catch (e) {
+    // Se reintenta con el respaldo en dos casos:
+    //   4xx → el alias apunta a un modelo que no traga estos parámetros.
+    //   503 → el modelo está saturado (llega rápido, ~9 s, así que reintentar
+    //         sale barato y suele funcionar: el respaldo va menos cargado).
+    // NO se reintenta el 504, que es nuestro propio timeout: repetir una
+    // llamada que ya ha tardado dos minutos sólo hace esperar el doble.
+    const status = Number(e?.status);
+    const reintentable = (status >= 400 && status < 500) || status === 503;
+    if (!reintentable) throw e;
+    console.warn(`[lazyfood] ${MODEL} falló (${status}), reintento con ${FALLBACK_MODEL}:`, e?.message);
+    return api('/ai', { method: 'POST', body: { ...body, model: FALLBACK_MODEL } });
+  }
 }
 
 // Llama, extrae y parsea. Si el JSON viene roto reintenta una vez: el truncado
@@ -156,7 +191,14 @@ Responde SÓLO con JSON válido sin markdown:
         { inlineData: { mimeType, data: imageBase64 } },
       ],
     }],
-    generationConfig: jsonConfig(RECEIPT_SCHEMA, { temperature: 0.2 }),
+    // La única de las seis que sube del mínimo: aquí no se rellena un formato
+    // dado, hay que mirar una foto, distinguir columnas y entender que "2,35"
+    // es un precio y "26/06/26" una fecha. Se queda en 'low' y no en 'medium'
+    // porque el proxy corta a los 60 s y esta llamada ya lleva la imagen.
+    generationConfig: jsonConfig(RECEIPT_SCHEMA, {
+      temperature: 0.2,
+      thinkingConfig: { thinkingLevel: 'low' },
+    }),
   });
 }
 

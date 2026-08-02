@@ -5,16 +5,29 @@ import { json, errorResponse, safeJson } from '../util.js';
 import { isMember } from './households.js';
 
 const MAX_PAYLOAD_BYTES = 12 * 1024 * 1024;
-const UPSTREAM_TIMEOUT_MS = 60_000;
+// 60 s se quedaban cortos: el hub de recetas pide 15 recetas con pasos en una
+// sola llamada y los pasaba. El timeout está para que una llamada colgada no
+// retenga el Worker indefinidamente, no para cortar generación legítima.
+const UPSTREAM_TIMEOUT_MS = 120_000;
 
+// Lista explícita a propósito: con una regla por prefijo ("cualquier cosa que
+// contenga flash") entrarían modelos especializados como -cyber o -image, que
+// comparten nombre pero no sirven para esto.
 const ALLOWED_MODELS = new Set([
+  // Alias dinámico: Google lo reapunta al Flash más reciente. Es el que usa la
+  // app; avisan por email con dos semanas si el cambio rompe algo.
+  'gemini-flash-latest',
+  'gemini-flash-lite-latest',
+  // Fijos, para el respaldo cuando el alias falle y para poder anclar la app a
+  // una versión concreta sin tocar el Worker.
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
   'gemini-2.5-pro',
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
 ]);
 
 export async function aiProxy(request, env, cors, auth) {
