@@ -6,20 +6,24 @@ import {
   REPLACEMENT_SCHEMA, SCALE_SCHEMA, autoPlanSchema,
 } from './aiSchemas.js';
 
-// Alias dinámico: Google lo reapunta al Flash más reciente (hoy resuelve a
-// gemini-3.6-flash, comprobado en el modelVersion de la respuesta). Se usa el
-// alias en vez de un id fijo para no quedarnos anclados a un modelo viejo sin
-// enterarnos; avisan por email con dos semanas de antelación si el cambio rompe.
-const MODEL = 'gemini-flash-latest';
-// Respaldo. Cubre dos casos medidos:
-//   1. El alias se mueve a un modelo incompatible. Pasó al saltar de 2.5 a 3:
-//      thinkingBudget dejó de valer y devolvía 400.
-//   2. El modelo más nuevo se satura. Google responde "experiencing high
-//      demand" y la llamada se pierde.
-// Flash-Lite es de la misma generación (mismo parámetro de esfuerzo), Google lo
-// recomienda justo para extracción estructurada, y es el que más peticiones
-// gratuitas permite. Medido el mismo día: ~1 s constante frente a los 40-60 s
-// erráticos del Flash grande.
+// Alias dinámico: Google lo reapunta al Flash-Lite más reciente. Se usa alias y
+// no un id fijo para no quedarnos anclados a un modelo viejo sin enterarnos;
+// avisan por email con dos semanas si el cambio rompe algo.
+//
+// Flash-Lite y no el Flash grande, medido el mismo día contra la API:
+//   | llamada        | gemini-flash-latest (3.6) | flash-lite      |
+//   | chat de 3 recetas | 2,4 s y 40,0 s         | 1,0 s y 0,8 s   |
+//   | hub de 15 recetas | timeout a los 60 s     | 7,2 s completas |
+//   | escaneo de ticket | 2,8 s, datos exactos   | 2,1 s, idénticos|
+// Un sondeo de 5 llamadas seguidas al Flash grande dio 39,9 / 40,9 / 59,3 /
+// fallo por saturación / 54,0 s: está congestionado en el nivel gratuito.
+// Flash-Lite además es el que más peticiones gratuitas permite y el que Google
+// recomienda para extracción estructurada, que es justo lo que hace esta app.
+const MODEL = 'gemini-flash-lite-latest';
+// Respaldo anclado a la versión concreta que hoy hay detrás del alias. Cubre el
+// fallo que dejaría la app entera sin IA: que el alias se mueva a un modelo que
+// no trague estos parámetros. Pasó de verdad al saltar de 2.5 a 3, cuando
+// thinkingBudget dejó de valer y empezó a devolver 400.
 const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
 export const proxyConfigured = _proxyConfigured;
 
@@ -194,7 +198,7 @@ Responde SÓLO con JSON válido sin markdown:
     // La única de las seis que sube del mínimo: aquí no se rellena un formato
     // dado, hay que mirar una foto, distinguir columnas y entender que "2,35"
     // es un precio y "26/06/26" una fecha. Se queda en 'low' y no en 'medium'
-    // porque el proxy corta a los 60 s y esta llamada ya lleva la imagen.
+    // porque esta llamada ya carga con la imagen y hay timeout en el proxy.
     generationConfig: jsonConfig(RECEIPT_SCHEMA, {
       temperature: 0.2,
       thinkingConfig: { thinkingLevel: 'low' },
