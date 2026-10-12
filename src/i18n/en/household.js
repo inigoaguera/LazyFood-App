@@ -47,7 +47,7 @@ export default {
   },
   import: {
     title: 'You have data waiting to upload',
-    subtitle: 'I found food, recipes and lists you'd saved on this phone earlier.',
+    subtitle: "I found food, recipes and lists you'd saved on this phone earlier.",
     intro: "If you want to keep it, I'll upload it to the cloud as a new house. Your other devices will see it too.",
     rowItems: 'Items in the fridge',
     rowRecipes: 'Recipes',
