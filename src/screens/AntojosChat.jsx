@@ -101,8 +101,9 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
 
   const send = async (overrideText) => {
     const activeFilters = Object.entries(filters).filter(([, v]) => v).map(([k]) => k);
-    const filters = quickFilters();
-    const filterPrompts = activeFilters.map((id) => filters.find((f) => f.id === id)?.prompt).filter(Boolean);
+    // OJO: no llamar a esto `filters`, que es el estado leído justo arriba.
+    const defs = quickFilters();
+    const filterPrompts = activeFilters.map((id) => defs.find((f) => f.id === id)?.prompt).filter(Boolean);
     const userText = (overrideText ?? input).trim();
     if (!userText && filterPrompts.length === 0) return;
 
