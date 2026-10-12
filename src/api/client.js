@@ -9,7 +9,11 @@ let onUnauthorizedCb = null;
 export function onUnauthorized(cb) { onUnauthorizedCb = cb; }
 
 export async function api(path, { method = 'GET', body, auth = true, headers: extra = {} } = {}) {
-  if (!BASE) throw new Error('VITE_API_PROXY_URL no está configurado');
+  if (!BASE) {
+    const err = new Error('VITE_API_PROXY_URL no está configurado'); // i18n-ignore (se enseña por código)
+    err.code = 'NO_PROXY';
+    throw err;
+  }
   const headers = { 'Content-Type': 'application/json', ...extra };
   if (auth) {
     const jwt = await getJwt();

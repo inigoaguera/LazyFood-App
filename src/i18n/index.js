@@ -162,5 +162,11 @@ export function errMsg(e, fallbackKey = 'errors.generic') {
   const code = e?.code || (e?.message === 'UNAUTHORIZED' ? 'UNAUTHORIZED' : null);
   if (code && has(`errors.code.${code}`)) return t(`errors.code.${code}`);
   if (e?.name === 'TypeError' && /fetch/i.test(e?.message || '')) return t('errors.network');
+  // Errores de Gemini que el proxy reenvía tal cual: traen su propio JSON (en
+  // inglés técnico) y un `code` numérico. Se traducen por estado HTTP.
+  const status = Number(e?.status);
+  if (status === 429) return t('errors.code.RATE_LIMIT');
+  if (status === 504) return t('errors.code.AI_TIMEOUT');
+  if (status === 502 || status === 503) return t('errors.code.UPSTREAM');
   return e?.message || t(fallbackKey);
 }

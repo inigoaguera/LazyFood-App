@@ -34,7 +34,7 @@ export async function getHousehold(request, env, cors, auth, hid) {
   const h = await env.lazyfood_db.prepare(
     'SELECT id, name, color, budget, onboarded FROM households WHERE id=?'
   ).bind(hid).first();
-  if (!h) return errorResponse('NOT_FOUND', 'Casa no encontrada', 404, cors);
+  if (!h) return errorResponse('HOUSEHOLD_NOT_FOUND', 'Casa no encontrada', 404, cors);
 
   const members = await env.lazyfood_db.prepare(`
     SELECT u.id, u.email, u.name, u.avatar, m.role, m.joined_at
@@ -68,7 +68,7 @@ export async function patchHousehold(request, env, cors, auth, hid) {
   // con truthiness, {"name": ""} pasaba el typeof de arriba y esquivaba este
   // 403 por ser cadena falsy, dejando el nombre de la casa en blanco.
   if (('name' in body || 'color' in body) && role !== 'owner') {
-    return errorResponse('FORBIDDEN', 'Sólo el owner puede cambiar nombre/color', 403, cors);
+    return errorResponse('OWNER_ONLY', 'Sólo el owner puede cambiar nombre/color', 403, cors);
   }
   if ('name' in body && !String(body.name).trim()) {
     return errorResponse('BAD_NAME', 'La casa necesita un nombre', 400, cors);
@@ -82,7 +82,7 @@ export async function patchHousehold(request, env, cors, auth, hid) {
 
 export async function deleteHousehold(request, env, cors, auth, hid) {
   const role = await isMember(env, hid, auth.userId);
-  if (role !== 'owner') return errorResponse('FORBIDDEN', 'Sólo el owner puede borrar la casa', 403, cors);
+  if (role !== 'owner') return errorResponse('OWNER_ONLY', 'Sólo el owner puede borrar la casa', 403, cors);
   await env.lazyfood_db.prepare('DELETE FROM households WHERE id=?').bind(hid).run();
   return new Response(null, { status: 204, headers: cors });
 }
@@ -92,7 +92,7 @@ export async function removeMember(request, env, cors, auth, hid, targetUserId) 
   if (!role) return errorResponse('FORBIDDEN', 'No perteneces a esta casa', 403, cors);
   // Permitido si: eres el target (te sales) O eres owner expulsando a otro
   if (targetUserId !== auth.userId && role !== 'owner') {
-    return errorResponse('FORBIDDEN', 'Sólo el owner puede expulsar miembros', 403, cors);
+    return errorResponse('OWNER_ONLY', 'Sólo el owner puede expulsar miembros', 403, cors);
   }
   // Owner no puede expulsarse a sí mismo si es el único owner (evita casa huérfana)
   if (targetUserId === auth.userId && role === 'owner') {

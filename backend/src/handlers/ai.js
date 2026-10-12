@@ -72,7 +72,7 @@ export async function aiProxy(request, env, cors, auth) {
   } catch (e) {
     const timedOut = e?.name === 'TimeoutError' || e?.name === 'AbortError';
     return errorResponse(
-      'UPSTREAM',
+      timedOut ? 'AI_TIMEOUT' : 'UPSTREAM',
       timedOut ? 'La IA ha tardado demasiado en responder' : 'Fallo al contactar con Gemini',
       timedOut ? 504 : 502,
       cors,

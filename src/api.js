@@ -5,6 +5,7 @@ import {
   SUGGEST_RECIPES_SCHEMA, RECEIPT_SCHEMA, HUB_SCHEMA,
   REPLACEMENT_SCHEMA, SCALE_SCHEMA, autoPlanSchema,
 } from './aiSchemas.js';
+import { t } from './i18n/index.js';
 
 // Alias dinámico: Google lo reapunta al Flash-Lite más reciente. Se usa alias y
 // no un id fijo para no quedarnos anclados a un modelo viejo sin enterarnos;
@@ -32,7 +33,7 @@ export const proxyConfigured = _proxyConfigured;
 // mandaba a mirar el wifi cuando el wifi estaba perfecto.
 export class AiParseError extends Error {
   constructor(raw) {
-    super('No he entendido la respuesta de la IA');
+    super(t('errors.code.AI_PARSE'));
     this.name = 'AiParseError';
     this.code = 'AI_PARSE';
     this.raw = raw;
@@ -86,9 +87,24 @@ function formatAvoid(avoid = []) {
     .join('\n');
 }
 
+// Idioma de salida. Los prompts se quedan en castellano (están afinados y
+// medidos así); si el usuario usa la app en inglés se añade al final la
+// directiva de ai.directive, que pide el texto visible en inglés y deja
+// intactas las claves y los enums del JSON. En castellano es cadena vacía.
+function withLang(prompt) {
+  const directive = t('ai.directive');
+  return directive ? `${prompt}\n\n${directive}` : prompt;
+}
+
+function codedError(code) {
+  const err = new Error(t(`errors.code.${code}`));
+  err.code = code;
+  return err;
+}
+
 async function callAi(payload) {
   const householdId = await getCurrentHousehold();
-  if (!householdId) throw new Error('Sin casa activa');
+  if (!householdId) throw codedError('NO_HOUSEHOLD_LOCAL');
   const body = { model: MODEL, payload, householdId };
   try {
     return await api('/ai', { method: 'POST', body });
@@ -120,7 +136,7 @@ async function callAiJson(payload) {
 
 function extractText(geminiResponse) {
   const parts = geminiResponse?.candidates?.[0]?.content?.parts;
-  if (!parts) throw new Error('Respuesta vacía del modelo');
+  if (!parts) throw codedError('AI_EMPTY');
   return parts.map((p) => p.text || '').join('').trim();
 }
 
@@ -167,7 +183,7 @@ Máximo 3 recetas. Prioriza ingredientes que caduquen pronto. Sólo usa ingredie
 Tienen que ser comidas/cenas completas, no snacks. Añade pasos breves (3-6) para que el usuario pueda ejecutarlas.`;
 
   return callAiJson({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    contents: [{ role: 'user', parts: [{ text: withLang(prompt) }] }],
     generationConfig: jsonConfig(SUGGEST_RECIPES_SCHEMA, { temperature: 0.8, ...PENSANDO_RECETAS }),
   });
 }
@@ -306,7 +322,7 @@ Formato — SÓLO JSON válido sin markdown:
 Si el inventario está vacío o casi vacío, devuelve arrays vacíos pero respeta la estructura.`;
 
   return callAiJson({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    contents: [{ role: 'user', parts: [{ text: withLang(prompt) }] }],
     generationConfig: jsonConfig(HUB_SCHEMA, { temperature: 0.85, ...PENSANDO_RECETAS }),
   });
 }
@@ -356,7 +372,7 @@ uses: 3-6 nombres CORTOS de ingrediente, sin cantidades ni unidades — "arroz",
 no "Arroz: 1 kg".`;
 
   return callAiJson({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    contents: [{ role: 'user', parts: [{ text: withLang(prompt) }] }],
     generationConfig: jsonConfig(REPLACEMENT_SCHEMA, { temperature: 0.9, ...PENSANDO_RECETAS }),
   });
 }
@@ -377,7 +393,7 @@ ${ingrList}
 Reescala las cantidades de forma COHERENTE:
 - La mayoría se escalan linealmente (× ${toServings}/${fromServings} = ${(toServings / fromServings).toFixed(3)}).
 - Pero usa criterio: especias / sal / pimienta / aceite para freír / agua de cocción no escalan 1:1.
-- Cantidades como "al gusto", "una pizca", "un puñado" se mantienen igual.
+- Cantidades como ${t('ai.scaleKeepAsIs')} se mantienen igual.
 - Si la cantidad original está vacía, déjala vacía.
 - Mantén el unit original cuando tenga sentido. Si la cantidad escalada es muy grande, puedes cambiar de unidad (ej: 500g → 0.5kg).
 
@@ -391,7 +407,7 @@ Responde SÓLO con JSON válido:
 Mantén el mismo orden y nº de ingredientes que la entrada.`;
 
   return callAiJson({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    contents: [{ role: 'user', parts: [{ text: withLang(prompt) }] }],
     generationConfig: jsonConfig(SCALE_SCHEMA, { temperature: 0.3 }),
   });
 }

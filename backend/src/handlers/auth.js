@@ -11,6 +11,9 @@ const MAX_OTP_ATTEMPTS = 5;
 export async function authRequest(request, env, cors) {
   const body = await safeJson(request);
   const email = (body?.email || '').trim().toLowerCase();
+  // Idioma del email. Lo manda el cliente porque aún puede no existir la
+  // cuenta (y con ella sus prefs). Cualquier otro valor cae a castellano.
+  const lang = body?.lang === 'en' ? 'en' : 'es';
   if (!EMAIL_RE.test(email)) return errorResponse('BAD_EMAIL', 'Email inválido', 400, cors);
 
   // Rate limit anti-spam: máx 10 tokens por email en la última hora.
@@ -35,7 +38,7 @@ export async function authRequest(request, env, cors) {
   ).bind(token, email, code, now() + ttl).run();
 
   try {
-    await sendMagicLink(env, email, token, code);
+    await sendMagicLink(env, email, token, code, lang);
   } catch (e) {
     console.error('Email error:', e);
     return errorResponse('EMAIL_FAIL', 'No se pudo enviar el email', 502, cors);
@@ -64,7 +67,7 @@ export async function authVerify(request, env, cors) {
     ).bind(emailParam).first();
     if (row) {
       if ((row.attempts || 0) >= MAX_OTP_ATTEMPTS) {
-        return errorResponse('RATE_LIMIT', 'Demasiados intentos fallidos. Pide un código nuevo.', 429, cors);
+        return errorResponse('OTP_LOCKED', 'Demasiados intentos fallidos. Pide un código nuevo.', 429, cors);
       }
       if (row.code !== code) {
         await env.lazyfood_db.prepare(
