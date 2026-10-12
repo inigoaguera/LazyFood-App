@@ -52,10 +52,20 @@ const missingEs = onlyIn(enKeys, esKeys);
 if (missingEn.length) { errors += missingEn.length; console.log(`\n✗ ${missingEn.length} claves en es/ que faltan en en/:`); missingEn.forEach((k) => console.log(`   ${k}`)); }
 if (missingEs.length) { errors += missingEs.length; console.log(`\n✗ ${missingEs.length} claves en en/ que faltan en es/:`); missingEs.forEach((k) => console.log(`   ${k}`)); }
 
-// Variables {x} distintas entre idiomas: suele ser una errata.
-const vars = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
+// Variables {x} distintas entre idiomas: suele ser una errata. En las formas
+// _one/_zero un idioma puede omitir {n} ("the item" en vez de "the 1 item"),
+// así que ahí sólo se exige que no aparezcan variables que el otro no tiene.
+const varList = (s) => [...new Set([...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]))].sort();
+const vars = (s) => varList(s).join(',');
+const looseOk = (a, b) => {
+  const la = varList(a).filter((x) => x !== 'n');
+  const lb = varList(b).filter((x) => x !== 'n');
+  return la.join(',') === lb.join(',');
+};
 for (const [k, v] of esKeys) {
-  if (enKeys.has(k) && typeof v === 'string' && vars(v) !== vars(enKeys.get(k))) {
+  if (!enKeys.has(k) || typeof v !== 'string') continue;
+  const loose = /_(one|zero)$/.test(k);
+  if (loose ? !looseOk(v, enKeys.get(k)) : vars(v) !== vars(enKeys.get(k))) {
     errors++;
     console.log(`✗ variables distintas en "${k}": es {${vars(v)}} · en {${vars(enKeys.get(k))}}`);
   }

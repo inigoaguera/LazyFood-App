@@ -1,7 +1,7 @@
 // Namespace 'household' — see es/household.js.
 export default {
   picker: {
-    title: 'Which house do you want to open?',
+    title: 'Which house?',
     youAreOwner: "You're an owner",
     youAreMember: "You're a member",
     emptyLine1: "You're not part of any house yet.",
@@ -11,7 +11,7 @@ export default {
   },
   create: {
     title: 'New house',
-    subtitle: 'A house = a group that shares a fridge, recipes and a plan.',
+    subtitle: 'A house = a group that shares a fridge, recipes and a meal plan.',
     name: 'Name',
     namePlaceholder: "The Smiths' place",
     color: 'Colour',
@@ -30,12 +30,12 @@ export default {
     joining: 'Joining…',
     submit: 'Join',
     invalidCode: 'Invalid code',
-    alreadyMember: 'You were already a member',
+    alreadyMember: "You're already a member",
     joined: "You've joined {name}",
     joinFailed: "Couldn't join",
   },
   invite: {
-    title: 'Invite to {name}',
+    title: 'Invite people to {name}',
     intro: 'Generate a link and share it. Anyone with the link can join the house.',
     generating: 'Generating…',
     generate: 'Generate invite link',
@@ -47,7 +47,7 @@ export default {
   },
   import: {
     title: 'You have data waiting to upload',
-    subtitle: 'I found food, recipes and lists you had on this phone from before.',
+    subtitle: 'I found food, recipes and lists you'd saved on this phone earlier.',
     intro: "If you want to keep it, I'll upload it to the cloud as a new house. Your other devices will see it too.",
     rowItems: 'Items in the fridge',
     rowRecipes: 'Recipes',

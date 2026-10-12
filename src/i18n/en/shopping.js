@@ -6,7 +6,7 @@ export default {
   swipeHint: '← swipe to remove',
   auto: {
     title: 'Auto-added',
-    sub: 'Missing for your recipes',
+    sub: 'Needed for your recipes',
   },
   manual: {
     title: 'Your list',
@@ -14,12 +14,12 @@ export default {
   },
   done: {
     title: 'Already in the basket',
-    clear: 'Empty basket',
+    clear: 'Clear basket',
   },
-  confirmClear_one: "Empty the basket? This will remove the {n} item you've ticked off.",
-  confirmClear_other: "Empty the basket? This will remove the {n} items you've ticked off.",
-  cleared_one: 'Basket emptied · {n} removed',
-  cleared_other: 'Basket emptied · {n} removed',
+  confirmClear_one: "Clear the basket? This removes the item you've ticked off.",
+  confirmClear_other: "Clear the basket? This removes the {n} items you've ticked off.",
+  cleared_one: 'Basket cleared · {n} removed',
+  cleared_other: 'Basket cleared · {n} removed',
   removed: '{name} removed',
   placeholder: 'Olives, kitchen roll…',
   addSomething: 'Add something to the list',

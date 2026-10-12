@@ -40,7 +40,7 @@ export default {
   unit: {
     uds: 'pcs',
     ud: 'pc',
-    latas: 'cans',
+    latas: 'tins',
     paquetes: 'packs',
     L: 'L',
     ml: 'ml',

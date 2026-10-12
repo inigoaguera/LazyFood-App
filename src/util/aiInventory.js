@@ -1,5 +1,6 @@
 import { expiryStatus } from './expires.js';
 import { t } from '../i18n/index.js';
+import { unitLabel } from '../i18n/labels.js';
 
 // Texto del inventario para los prompts de IA.
 //
@@ -29,7 +30,7 @@ export function pantrySignature(items = []) {
 
 export function inventoryForPrompt(items = []) {
   return items.map((it) => {
-    const qty = it.type === 'continuous' ? `${it.fill}% (${it.unit})` : `${it.qty} ${it.unit}`;
+    const qty = it.type === 'continuous' ? `${it.fill}% (${unitLabel(it.unit)})` : `${it.qty} ${unitLabel(it.unit)}`;
     const st = expiryStatus(it);
     let exp = '';
     if (st.days != null && st.days <= 0) exp = ` ${t('ai.inv.expired')}`;

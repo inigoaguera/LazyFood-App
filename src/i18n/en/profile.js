@@ -5,7 +5,7 @@ export default {
     account: 'My account',
     house: 'This house',
     categories: 'House categories',
-    theme: 'Theme (yours, not shared)',
+    theme: 'Theme (just for you)',
     session: 'Session',
   },
   you: '(you)',
@@ -16,9 +16,9 @@ export default {
   importSample: 'Import sample data',
   leave: 'Leave "{name}"',
   deleteHouse: '🗑 Delete house forever',
-  logout: 'Log out',
+  logout: 'Sign out',
   houseUpdated: 'House updated',
-  left: 'You left the house',
+  left: "You've left this house",
   kicked: '{who} removed',
   houseDeleted: 'House deleted',
   confirm: {
@@ -26,7 +26,7 @@ export default {
     kick: 'Remove {who} from "{name}"?',
     deleteHouse: `Delete "{name}" FOREVER? You'll lose all items, recipes, the shopping list, spending and menu. This can't be undone.`,
     deleteHouseLast: 'Last chance. Are you sure?',
-    logout: `Log out? You'll need to enter your email again.`,
+    logout: `Sign out? You'll need to enter your email again.`,
   },
   import: {
     confirm: `Import {items} + {recipes} + {shopping} into "{name}"?\n\nThey're ADDED to what you already have (nothing is replaced). If you'd like a fresh start, delete your existing items first.`,
@@ -60,7 +60,7 @@ export default {
     color: 'Colour',
     created: 'Category "{name}" created',
     confirmDelete: `Delete the category "{name}"? Items using it will end up without a category.`,
-    deleted: 'Category removed',
+    deleted: 'Category deleted',
   },
   theme: {
     palette: 'Palette',

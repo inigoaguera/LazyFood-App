@@ -5,7 +5,7 @@ export default {
     afternoon: 'Good afternoon',
     evening: 'Good evening',
   },
-  title: "What's at home today?",
+  title: 'What have we got today?',
   expiringSoon_one: '{n} expiring soon',
   expiringSoon_other: '{n} expiring soon',
   urgent_one: '{n} urgent',
@@ -13,7 +13,7 @@ export default {
   useThisWeek: 'Use them this week',
   recipesLink: 'Recipes →',
   quick: {
-    title: 'Quick access',
+    title: 'Shortcuts',
     shopping: 'Shopping list',
     menu: 'Weekly menu',
     menuAssigned: '{n} / 14 planned',
@@ -25,6 +25,6 @@ export default {
     fromRecipes: 'From your recipes ({n})',
     noRecipes: "You don't have any saved recipes that use {name} yet. Ask the AI for ideas.",
     moreIdeas: 'More ideas with AI',
-    prompt: 'Recipes using "{name}" because it\'s about to expire. Complete lunches or dinners.',
+    prompt: 'Recipes using "{name}" because it\'s about to expire. Proper lunches or dinners.',
   },
 };

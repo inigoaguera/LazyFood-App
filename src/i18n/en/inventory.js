@@ -1,11 +1,11 @@
 // Namespace 'inventory' — see es/inventory.js.
 export default {
-  title: 'All food',
+  title: 'All your food',
   found_one: '{n} item found',
   found_other: '{n} items found',
   searchPlaceholder: "Search 'tomatoes', 'milk'…",
   allCats: 'All',
-  sortedBy: 'Sorted by · use-by',
+  sortedBy: 'Sorted by · expiry',
   swipeHint: '← swipe for actions',
   swipe: {
     move: 'Move',
@@ -32,7 +32,7 @@ export default {
     normal: 'step 1 · tap for 0.25',
   },
   soldOut: {
-    badge: 'Out of stock',
+    badge: 'All gone',
     addToShopping: 'Add to shopping list',
     editRestock: 'Edit / restock',
     removeFromInventory: 'Remove from inventory',
@@ -44,7 +44,7 @@ export default {
     noHousehold: 'No active house',
     saveFailed: "Couldn't save",
     added: '{name} added',
-    expiryStarted: 'Use-by countdown started from today',
+    expiryStarted: 'Expiry countdown started from today',
     quantity: 'Quantity',
     continuousSub: 'rice, milk, oil…',
     discreteSub: 'eggs, tomatoes…',
@@ -53,8 +53,8 @@ export default {
     location: 'Location',
     category: 'Category',
     expires: 'Expires',
-    open: '📦 Open — starts the use-by countdown',
+    open: '📦 Open — starts the expiry countdown',
     openedOn: 'Opened on {date}',
-    deleteItem: 'Remove food',
+    deleteItem: 'Remove item',
   },
 };
