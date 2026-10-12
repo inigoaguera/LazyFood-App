@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useLF } from '../components/ctx.js';
 import { errMsg } from '../i18n/index.js';
-import { expenseCatLabel, unitLabel, unitKey } from '../i18n/labels.js';
-import { toast } from '../components/base.jsx';
+import { expenseCatLabel, unitLabel } from '../i18n/labels.js';
+import { toast, UnitInput } from '../components/base.jsx';
 import {
   create as resourceCreate, patch as resourcePatch, remove as resourceRemove,
 } from '../api/resources.js';
@@ -240,7 +240,7 @@ const LineEditor = ({ line, pal, allCategories, onChange, onRemove }) => {
               placeholder="1"
               style={{ width: 60, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8, textAlign: 'center' }} />
             {/* Se enseña la etiqueta (pcs/uds) y se guarda la clave: escribir "tins" guarda "latas". */}
-            <input value={unitLabel(line.unit || '')} onChange={(e) => onChange({ unit: unitKey(e.target.value) })}
+            <UnitInput value={line.unit || ''} onChange={(unit) => onChange({ unit })}
               placeholder={unitLabel('uds')}
               style={{ width: 80, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8, textAlign: 'center' }} />
             <div style={{

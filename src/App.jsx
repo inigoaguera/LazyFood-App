@@ -13,8 +13,8 @@ import { goBack, useBackLayers, useBackClose } from './util/nav.js';
 import { BottomNav, ToastHost } from './components/base.jsx';
 import DebugOverlay from './screens/DebugOverlay.jsx';
 import { isDebugActive } from './util/debug.js';
-import { t, setLang, getLang, normalizeLang, storedLang, detectLang, rememberLangLocally } from './i18n/index.js';
-import { syncLangToAccount, resetLangOnLogout, onEffectiveLangChange } from './i18n/switch.js';
+import { t, setLang, normalizeLang, storedLang, detectLang, rememberLangLocally } from './i18n/index.js';
+import { syncLangToAccount, resetLangOnLogout, onEffectiveLangChange, readPending, markLangPending } from './i18n/switch.js';
 import Login from './screens/Login.jsx';
 import Verify from './screens/Verify.jsx';
 import HouseholdPicker from './screens/HouseholdPicker.jsx';
@@ -70,12 +70,17 @@ function readUrlParams() {
   return { token, invite };
 }
 
+// Mientras IndexedDB no responde, settings vale esto (y settingsLoaded false).
+const NO_SETTINGS = {};
+
 export default function App() {
   // Settings cached in IndexedDB
-  const settings = useLiveQuery(async () => {
+  const settingsRaw = useLiveQuery(async () => {
     const all = await db.settings.toArray();
     return Object.fromEntries(all.map((s) => [s.key, s.value]));
-  }, [], {});
+  }, [], null);
+  const settingsLoaded = settingsRaw !== null;
+  const settings = settingsRaw || NO_SETTINGS;
 
   // ─── Auth state ──────────────────────────────────────────
   const me = settings.me || null;
@@ -95,18 +100,26 @@ export default function App() {
   // Idioma, por orden (ver el modelo en i18n/switch.js):
   //   1. un cambio aún sin confirmar por el servidor (langPending),
   //   2. el de tu cuenta (prefs.lang),
-  //   3. el último que se usó en este móvil (localStorage),
-  //   4. el elegido aquí y guardado en IndexedDB (respaldo si iOS borró el otro),
+  //   3. el elegido explícitamente en este móvil (settings.lang),
+  //   4. el último que se mostró en este móvil (localStorage; también sirve
+  //      para el primer pintado, antes de que responda IndexedDB),
   //   5. el del sistema.
   // Se fija aquí, en el render, para que los hijos ya pinten con él.
-  const pendingLang = normalizeLang(settings.langPending);
+  // El de la cuenta sólo cuenta con sesión: un /me que llega justo después de
+  // cerrarla puede dejar escrita la copia de `me`, y el login no debe salir en
+  // el idioma de una cuenta que ya no está.
+  const pendingLang = jwt ? (readPending(settings.langPending)?.lang || null) : null;
+  const accountLang = jwt ? normalizeLang(userPrefs.lang) : null;
   const lang = setLang(
-    pendingLang || normalizeLang(userPrefs.lang) || storedLang() || normalizeLang(settings.lang) || detectLang()
+    pendingLang || accountLang || normalizeLang(settings.lang) || storedLang() || detectLang()
   );
+  // Nada se guarda hasta que IndexedDB ha respondido: el primer render sólo
+  // conoce localStorage o el idioma del sistema, que es una suposición.
   useEffect(() => {
+    if (!settingsLoaded) return;
     rememberLangLocally(lang);
-    onEffectiveLangChange(lang).catch(() => {});
-  }, [lang]);
+    onEffectiveLangChange(lang);
+  }, [lang, settingsLoaded]);
 
   // Sincronización con la cuenta (i18n/switch.js):
   //   - Cuenta sin idioma (primer login o cuenta anterior a esta función): sólo
@@ -118,13 +131,13 @@ export default function App() {
   //     no hay marca, así que llamarla de más es inofensivo.
   const explicitLang = normalizeLang(settings.lang);
   useEffect(() => {
-    if (!me?.id || !me.prefs) return;
+    if (!jwt || !me?.id || !me.prefs) return;
     if (!pendingLang && !normalizeLang(me.prefs.lang) && explicitLang) {
-      setSetting('langPending', explicitLang);
+      markLangPending(explicitLang);
       return;
     }
     if (pendingLang) syncLangToAccount();
-  }, [me, pendingLang, explicitLang]);
+  }, [jwt, me, pendingLang, explicitLang]);
 
   const pal = LF_PALETTES[palette] || LF_PALETTES.huerto;
   const fonts = LF_FONTS[fontKey] || LF_FONTS.playful;
@@ -149,7 +162,7 @@ export default function App() {
     onUnauthorized(() => {
       setSetting('me', null);
       setSetting('currentHouseholdId', null);
-      resetLangOnLogout(getLang()).catch(() => {});
+      resetLangOnLogout().catch(() => {});
     });
   }, []);
 

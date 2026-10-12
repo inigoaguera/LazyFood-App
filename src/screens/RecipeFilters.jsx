@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { namesMatch } from '../util/stock.js';
 import { useLF } from '../components/ctx.js';
 import { t } from '../i18n/index.js';
 
@@ -43,11 +44,9 @@ export function applyFilters(recipes, filters, { stockByName, detailsByName } = 
     }
     if (filters.ingredients?.length && detailsByName) {
       const det = detailsByName.get(r.name);
-      const ingNames = (det?.ingredients || []).map((i) => (i.name || '').toLowerCase());
-      const allMatch = filters.ingredients.every((wanted) => {
-        const w = wanted.toLowerCase();
-        return ingNames.some((n) => n.includes(w) || w.includes(n.split(' ')[0]));
-      });
+      // Mismo emparejado por nombre que el stock y el cocinar (util/stock.js).
+      const ingNames = (det?.ingredients || []).map((i) => i.name || '');
+      const allMatch = filters.ingredients.every((wanted) => ingNames.some((n) => namesMatch(n, wanted)));
       if (!allMatch) return false;
     }
     return true;

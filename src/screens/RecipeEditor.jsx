@@ -2,14 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLF } from '../components/ctx.js';
 import { db } from '../db.js';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Button, toast } from '../components/base.jsx';
+import { Button, toast, UnitInput } from '../components/base.jsx';
 import { LF_SHADOWS } from '../tokens/palettes.js';
 import { create as resourceCreate, patch as resourcePatch, remove as resourceRemove } from '../api/resources.js';
 import { syncHousehold } from '../api/sync.js';
 import { RECIPE_THUMBS } from '../data/recipeThumbs.jsx';
 import AddEditModal from './AddEditItem.jsx';
 import { t, errMsg } from '../i18n/index.js';
-import { groupLabel, unitLabel } from '../i18n/labels.js';
+import { groupLabel, unitLabel, unitKey } from '../i18n/labels.js';
 
 const IMG_OPTIONS = Object.entries(RECIPE_THUMBS);
 // Los ids son lo que se guarda en la receta; la etiqueta se pinta con groupLabel().
@@ -131,7 +131,7 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
       const cleanIngredients = ingredients.filter((i) => i.name?.trim()).map((i) => ({
         name: i.name.trim(),
         qty: i.qty?.trim() || '',
-        unit: i.unit?.trim() || '',
+        unit: unitKey(i.unit?.trim() || ''),
         itemId: i.itemId || null,
       }));
       const cleanSteps = steps.map((s) => s.trim()).filter(Boolean);
@@ -418,7 +418,7 @@ const IngredientRow = ({ ing, inventory, hid, onChange, onRemove }) => {
         <input value={ing.qty} onChange={(e) => onChange({ qty: e.target.value })}
           placeholder="200"
           style={{ width: 50, padding: 6, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 6, textAlign: 'center' }} />
-        <input value={ing.unit} onChange={(e) => onChange({ unit: e.target.value })}
+        <UnitInput value={ing.unit} onChange={(unit) => onChange({ unit })}
           placeholder="g"
           style={{ width: 50, padding: 6, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 6 }} />
         <button onClick={onRemove} style={{

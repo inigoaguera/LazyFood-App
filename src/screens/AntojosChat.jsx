@@ -146,17 +146,14 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
     }
   };
 
-  // ¿Esta sugerencia ya está guardada? Por nombre completo (sin tildes ni
-  // mayúsculas) o con un nombre contenido entero en el otro. Antes bastaba la
-  // primera palabra, y "Easy…" o "Pasta…" daba por guardada cualquier receta
-  // que empezara igual y abría otra al pulsar "Ver".
+  // ¿Esta sugerencia ya está guardada? Sólo con el MISMO nombre (sin tildes,
+  // mayúsculas ni signos), que es como se guarda. Con coincidencias parciales
+  // ("Pasta" dentro de "Pasta al pesto", o la primera palabra como antes),
+  // "Ver" abría otra receta en vez de la sugerencia.
   const matchExisting = (name) => {
-    const words = nameWords(name).join(' ');
-    if (!words) return null;
-    return recipes.find((r) => {
-      const other = nameWords(r.name).join(' ');
-      return other && (other === words || ` ${words} `.includes(` ${other} `) || ` ${other} `.includes(` ${words} `));
-    }) || null;
+    const key = nameWords(name).join(' ');
+    if (!key) return null;
+    return recipes.find((r) => nameWords(r.name).join(' ') === key) || null;
   };
 
   return (

@@ -91,9 +91,16 @@ function formatAvoid(avoid = []) {
 // medidos así); si el usuario usa la app en inglés se añade al final la
 // directiva de ai.directive, que pide el texto visible en inglés y deja
 // intactas las claves y los enums del JSON. En castellano es cadena vacía.
-function withLang(prompt) {
+//
+// `uses: true` en los prompts que devuelven ingredientes del inventario: la
+// regla ai.usesRule (en los dos idiomas) pide copiar el nombre del inventario
+// para que util/stock.js lo encuentre al cocinar y al pintar el stock.
+function withLang(prompt, { uses = false } = {}) {
+  const parts = [prompt];
+  if (uses) parts.push(t('ai.usesRule'));
   const directive = t('ai.directive');
-  return directive ? `${prompt}\n\n${directive}` : prompt;
+  if (directive) parts.push(directive);
+  return parts.join('\n\n');
 }
 
 function codedError(code) {
@@ -183,7 +190,7 @@ Máximo 3 recetas. Prioriza ingredientes que caduquen pronto. Sólo usa ingredie
 Tienen que ser comidas/cenas completas, no snacks. Añade pasos breves (3-6) para que el usuario pueda ejecutarlas.`;
 
   return callAiJson({
-    contents: [{ role: 'user', parts: [{ text: withLang(prompt) }] }],
+    contents: [{ role: 'user', parts: [{ text: withLang(prompt, { uses: true }) }] }],
     generationConfig: jsonConfig(SUGGEST_RECIPES_SCHEMA, { temperature: 0.8, ...PENSANDO_RECETAS }),
   });
 }
@@ -322,7 +329,7 @@ Formato — SÓLO JSON válido sin markdown:
 Si el inventario está vacío o casi vacío, devuelve arrays vacíos pero respeta la estructura.`;
 
   return callAiJson({
-    contents: [{ role: 'user', parts: [{ text: withLang(prompt) }] }],
+    contents: [{ role: 'user', parts: [{ text: withLang(prompt, { uses: true }) }] }],
     generationConfig: jsonConfig(HUB_SCHEMA, { temperature: 0.85, ...PENSANDO_RECETAS }),
   });
 }
@@ -372,7 +379,7 @@ uses: 3-6 nombres CORTOS de ingrediente, sin cantidades ni unidades — "arroz",
 no "Arroz: 1 kg".`;
 
   return callAiJson({
-    contents: [{ role: 'user', parts: [{ text: withLang(prompt) }] }],
+    contents: [{ role: 'user', parts: [{ text: withLang(prompt, { uses: true }) }] }],
     generationConfig: jsonConfig(REPLACEMENT_SCHEMA, { temperature: 0.9, ...PENSANDO_RECETAS }),
   });
 }

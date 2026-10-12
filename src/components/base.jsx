@@ -3,6 +3,7 @@ import { useLF, haptic } from './ctx.js';
 import { LF_SHADOWS } from '../tokens/palettes.js';
 import LFIcon from '../icons/LFIcon.jsx';
 import { t } from '../i18n/index.js';
+import { unitLabel, unitKey } from '../i18n/labels.js';
 
 // ─── Screen ─────────────────────────────────────────────────────────────
 export const Screen = ({ children, scrollable = true, padBottom = 100, style }) => (
@@ -260,6 +261,28 @@ export const SwipeRow = ({ children, actions, height }) => {
 export const Divider = () => {
   const { pal } = useLF();
   return <div style={{ height: 0.5, background: pal.line, margin: '4px 0' }}/>;
+};
+
+// ─── UnitInput ──────────────────────────────────────────────────────────
+// Campo de texto libre para una unidad que se GUARDA como clave (uds, latas…)
+// pero se enseña con su etiqueta (pcs, tins…). Lo que escribes se ve tal cual
+// mientras escribes; al padre le llega siempre la clave ("tins" → "latas",
+// una unidad desconocida tal cual), y al salir del campo se vuelve a pintar la
+// etiqueta. Convertir el texto en cada tecla se comía espacios y cambiaba
+// letras a medio escribir ("l" → "L", "ud…" → "pc…").
+export const UnitInput = ({ value, onChange, placeholder, style }) => {
+  const { lang } = useLF();
+  const [text, setText] = useState(() => unitLabel(value || ''));
+  const [focused, setFocused] = useState(false);
+  React.useEffect(() => {
+    if (!focused) setText(unitLabel(value || ''));
+  }, [value, focused, lang]);
+  return (
+    <input value={text} placeholder={placeholder} style={style}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={(e) => { setText(e.target.value); onChange(unitKey(e.target.value.trim())); }} />
+  );
 };
 
 // ─── Toast (lightweight) ────────────────────────────────────────────────

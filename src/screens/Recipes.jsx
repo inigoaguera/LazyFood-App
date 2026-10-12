@@ -22,7 +22,7 @@ export { RECIPE_THUMBS, RecipeThumb };
 const HUB_IDEAS = 15;
 
 export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
-  const { pal, currentHouseholdMeta } = useLF();
+  const { pal, currentHouseholdMeta, lang } = useLF();
   const hid = currentHouseholdMeta?.id;
   const recipes = useLiveQuery(
     () => hid ? db.recipes.where({ householdId: hid }).toArray() : Promise.resolve([]),
@@ -58,7 +58,14 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
   }, [detailsByName, items]);
 
   // ─── Cache de sugerencias IA ──────────────────────────────────────
-  const [aiData, setAiData] = useState(null); // { effortless, chef, oneOff }
+  const [aiData, setAiData] = useState(null); // { effortless, chef, oneOff, lang }
+  // Si el idioma cambia con el hub abierto (p.ej. desde otro móvil), las
+  // sugerencias en pantalla son del idioma anterior: fuera, para que un
+  // reemplazo no las guarde mezcladas con la etiqueta del idioma nuevo.
+  useEffect(() => {
+    if (aiData && (aiData.lang || 'es') !== lang) setAiData(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang]);
   const [aiBusy, setAiBusy] = useState(false); // true durante regenerar TODO
   const [replacingSlots, setReplacingSlots] = useState(() => new Set()); // "effortless:2" en marcha
 
