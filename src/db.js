@@ -147,4 +147,16 @@ export const RECIPE_USES_EXPIRING_BY_NAME = {
   'Salmón teriyaki':          [],
   'Paella mixta':             ['Pechuga de pollo'],
   'Guacamole':                [],
+  // English seed recipes (src/data/seed.en.js) → English seed item names.
+  // 'Guacamole' is identical in both languages and already covered above.
+  "Mum's pasta":              ['Cherry tomatoes'],
+  'Easy Spanish omelette':    ['Eggs'],
+  'Caprese salad':            ['Cherry tomatoes'],
+  'Tuna & tomato sarnie':     ['Cherry tomatoes'],
+  'Scrambled eggs':           ['Eggs'],
+  'Avocado toast':            [],
+  'Prawn risotto':            ['Chicken breast'],
+  'Thai chicken curry':       ['Chicken breast'],
+  'Teriyaki salmon':          [],
+  'Mixed paella':             ['Chicken breast'],
 };

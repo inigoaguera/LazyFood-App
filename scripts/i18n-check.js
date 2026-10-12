@@ -28,7 +28,7 @@ const SKIP_LITERALS = new Set([
   'src/screens/DebugOverlay.jsx', 'src/util/debug.js', 'src/util/jwt.js',
   // Castellano a propósito: prompts de la IA (afinados en castellano; el idioma
   // de salida lo fija ai.directive) y datos de prueba en castellano.
-  'src/api.js', 'src/aiSchemas.js', 'src/data/seed.es.js',
+  'src/api.js', 'src/aiSchemas.js', 'src/data/seed.es.js', 'src/data/seed.en.js',
 ]);
 
 const es = (await import(pathToFileURL(path.join(src, 'i18n/es/index.js')))).default;
