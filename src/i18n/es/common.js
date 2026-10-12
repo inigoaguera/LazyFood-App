@@ -58,4 +58,11 @@ export default {
     title: 'Idioma',
     hint: 'Sólo para ti: el resto de la casa ve la app en su idioma.',
   },
+  crash: {
+    title: 'Algo se ha roto',
+    body: 'La app ha tenido un fallo inesperado. Tus datos están a salvo en la nube: recarga y sigue donde lo dejaste.',
+    reload: 'Recargar',
+    hideDetail: 'Ocultar detalle',
+    showDetail: 'Ver detalle técnico',
+  },
 };

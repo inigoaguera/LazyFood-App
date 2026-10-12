@@ -1,4 +1,5 @@
 import React from 'react';
+import { t } from '../i18n/index.js';
 
 // Red de seguridad de último recurso.
 //
@@ -42,11 +43,10 @@ export default class ErrorBoundary extends React.Component {
         }}>
           <div style={{ fontSize: 44, marginBottom: 12 }}>🥑</div>
           <div style={{ fontSize: 19, fontWeight: 700, color: COLORS.ink, marginBottom: 8 }}>
-            Algo se ha roto
+            {t('common.crash.title')}
           </div>
           <div style={{ fontSize: 14, lineHeight: 1.5, color: COLORS.inkSoft, marginBottom: 20 }}>
-            La app ha tenido un fallo inesperado. Tus datos están a salvo en la nube:
-            recarga y sigue donde lo dejaste.
+            {t('common.crash.body')}
           </div>
 
           <button
@@ -56,7 +56,7 @@ export default class ErrorBoundary extends React.Component {
               background: COLORS.primary, color: '#fff',
               fontSize: 15, fontWeight: 700, cursor: 'pointer',
             }}>
-            Recargar
+            {t('common.crash.reload')}
           </button>
 
           <button
@@ -65,7 +65,7 @@ export default class ErrorBoundary extends React.Component {
               marginTop: 10, background: 'transparent', border: 'none',
               color: COLORS.inkSoft, fontSize: 12, cursor: 'pointer', textDecoration: 'underline',
             }}>
-            {showDetail ? 'Ocultar detalle' : 'Ver detalle técnico'}
+            {showDetail ? t('common.crash.hideDetail') : t('common.crash.showDetail')}
           </button>
 
           {showDetail && (

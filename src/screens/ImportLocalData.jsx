@@ -6,12 +6,13 @@ import { getLegacyData, clearLegacy } from '../db.js';
 import { bulkImport } from '../api/resources.js';
 import { syncHousehold } from '../api/sync.js';
 import { createHousehold, setCurrentHousehold, fetchMe } from '../api/session.js';
+import { errMsg } from '../i18n/index.js';
 
 export default function ImportLocalData({ onDone, onSkip }) {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const [legacy, setLegacy] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [householdName, setHouseholdName] = useState('Mi casa');
+  const [householdName, setHouseholdName] = useState(() => t('household.import.defaultName'));
 
   useEffect(() => {
     (async () => {
@@ -51,25 +52,25 @@ export default function ImportLocalData({ onDone, onSkip }) {
       await clearLegacy();
       await fetchMe();
       await syncHousehold(h.id, { full: true });
-      toast(`¡Importados ${total} elementos a "${h.name}"!`);
+      toast(t('household.import.imported', { n: total, name: h.name }));
       onDone(h.id);
     } catch (e) {
-      toast(e?.message || 'No se pudo importar', 'error');
+      toast(errMsg(e, 'household.import.importFailed'), 'error');
     } finally {
       setBusy(false);
     }
   };
 
   const skipImport = async () => {
-    if (!confirm('¿Descartar los datos locales? No podrás recuperarlos.')) return;
+    if (!confirm(t('household.import.discardConfirm'))) return;
     await clearLegacy();
     onSkip();
   };
 
   return (
     <Screen>
-      <Header big title="Tienes datos sin subir"
-        subtitle="Encontré comida, recetas y listas que tenías en este móvil de antes." />
+      <Header big title={t('household.import.title')}
+        subtitle={t('household.import.subtitle')} />
 
       <div style={{ padding: '0 20px' }}>
         <div style={{
@@ -78,25 +79,25 @@ export default function ImportLocalData({ onDone, onSkip }) {
           marginBottom: 18,
         }}>
           <div style={{ fontSize: 13, color: pal.inkSoft, marginBottom: 12 }}>
-            Si quieres conservarlo, lo subo a la nube como una casa nueva. El resto de tus dispositivos lo verán.
+            {t('household.import.intro')}
           </div>
           {counts && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <Row icon="🥑" label="Items en la nevera" n={counts.items} pal={pal} />
-              <Row icon="🍳" label="Recetas" n={counts.recipes} pal={pal} />
-              <Row icon="🛒" label="Lista de la compra" n={counts.shopping} pal={pal} />
-              <Row icon="📋" label="Menú semanal" n={counts.menuPlan} pal={pal} />
-              <Row icon="📖" label="Detalles de recetas" n={counts.recipeDetails} pal={pal} />
+              <Row icon="🥑" label={t('household.import.rowItems')} n={counts.items} pal={pal} />
+              <Row icon="🍳" label={t('household.import.rowRecipes')} n={counts.recipes} pal={pal} />
+              <Row icon="🛒" label={t('household.import.rowShopping')} n={counts.shopping} pal={pal} />
+              <Row icon="📋" label={t('household.import.rowMenu')} n={counts.menuPlan} pal={pal} />
+              <Row icon="📖" label={t('household.import.rowRecipeDetails')} n={counts.recipeDetails} pal={pal} />
             </div>
           )}
         </div>
 
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: pal.inkSoft, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>
-            Nombre de la casa nueva
+            {t('household.import.nameLabel')}
           </div>
           <input value={householdName} onChange={(e) => setHouseholdName(e.target.value)}
-            placeholder="Mi casa"
+            placeholder={t('household.import.defaultName')}
             style={{
               width: '100%', padding: '14px 16px', fontSize: 15,
               background: pal.surface, border: `1px solid ${pal.line}`,
@@ -106,14 +107,14 @@ export default function ImportLocalData({ onDone, onSkip }) {
 
         <Button tone="green" size="lg" fullWidth onClick={doImport}
           disabled={busy || !householdName.trim() || total === 0}>
-          {busy ? 'Subiendo…' : `Importar ${total} elementos`}
+          {busy ? t('household.import.uploading') : t('household.import.importBtn', { n: total })}
         </Button>
         <button onClick={skipImport} disabled={busy} style={{
           width: '100%', marginTop: 12, padding: 12, background: 'transparent',
           border: 'none', color: pal.inkSoft, fontSize: 13, fontWeight: 600,
           cursor: 'pointer',
         }}>
-          Descartar y empezar de cero
+          {t('household.import.discard')}
         </button>
       </div>
     </Screen>

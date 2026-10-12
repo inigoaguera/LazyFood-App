@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useLF } from '../components/ctx.js';
 import { Screen, Header, IconBtn, Button, Card } from '../components/base.jsx';
 import { fetchMe, setCurrentHousehold, logout } from '../api/session.js';
+import { errMsg } from '../i18n/index.js';
 
 export default function HouseholdPicker({ onPick, onCreate, onJoin, onLogout }) {
-  const { pal, fonts, me: cachedMe } = useLF();
+  const { pal, fonts, me: cachedMe, t } = useLF();
   // Pinta inmediatamente lo que tengamos cacheado, refresca en background.
   const [me, setMe] = useState(cachedMe || null);
   const [refreshing, setRefreshing] = useState(false);
@@ -15,7 +16,7 @@ export default function HouseholdPicker({ onPick, onCreate, onJoin, onLogout }) 
     setRefreshing(true);
     fetchMe()
       .then((m) => { if (!cancelled) setMe(m); })
-      .catch((e) => { if (!cancelled && !cachedMe) setErr(e?.message || 'Error'); })
+      .catch((e) => { if (!cancelled && !cachedMe) setErr(errMsg(e)); })
       .finally(() => { if (!cancelled) setRefreshing(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -35,12 +36,12 @@ export default function HouseholdPicker({ onPick, onCreate, onJoin, onLogout }) 
 
   return (
     <Screen>
-      <Header big title="¿Qué casa abres?"
+      <Header big title={t('household.picker.title')}
         subtitle={me?.email}
         right={<IconBtn icon="more" tone="soft" onClick={handleLogout} />} />
 
       <div style={{ padding: '0 20px' }}>
-        {loading && <div style={{ padding: 40, textAlign: 'center', color: pal.inkSoft }}>Cargando…</div>}
+        {loading && <div style={{ padding: 40, textAlign: 'center', color: pal.inkSoft }}>{t('common.loading')}</div>}
         {err && <div style={{ padding: 14, background: pal.dangerSoft, color: pal.danger, borderRadius: 12 }}>{err}</div>}
 
         {me?.households?.length > 0 && (
@@ -58,7 +59,7 @@ export default function HouseholdPicker({ onPick, onCreate, onJoin, onLogout }) 
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: fonts.display, fontSize: 17, fontWeight: 700, color: pal.ink }}>{h.name}</div>
                   <div style={{ fontSize: 11, color: pal.inkSoft, marginTop: 2 }}>
-                    {h.role === 'owner' ? 'Eres propietario' : 'Eres miembro'}
+                    {h.role === 'owner' ? t('household.picker.youAreOwner') : t('household.picker.youAreMember')}
                   </div>
                 </div>
                 <span style={{ fontSize: 22, color: pal.inkFaint }}>›</span>
@@ -74,18 +75,18 @@ export default function HouseholdPicker({ onPick, onCreate, onJoin, onLogout }) 
           }}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>🏠</div>
             <div style={{ fontSize: 14, lineHeight: 1.5 }}>
-              Aún no formas parte de ninguna casa.<br/>
-              Crea la tuya o únete con un código.
+              {t('household.picker.emptyLine1')}<br/>
+              {t('household.picker.emptyLine2')}
             </div>
           </div>
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <Button tone="green" size="lg" fullWidth icon="plus" onClick={onCreate}>
-            Crear nueva casa
+            {t('household.picker.create')}
           </Button>
           <Button tone="soft" size="lg" fullWidth onClick={onJoin}>
-            Unirme con código
+            {t('household.picker.join')}
           </Button>
         </div>
       </div>

@@ -55,4 +55,11 @@ export default {
     title: 'Language',
     hint: 'Just for you: everyone else in the house keeps their own language.',
   },
+  crash: {
+    title: 'Something broke',
+    body: 'The app hit an unexpected error. Your data is safe in the cloud: reload and pick up where you left off.',
+    reload: 'Reload',
+    hideDetail: 'Hide details',
+    showDetail: 'Show technical details',
+  },
 };

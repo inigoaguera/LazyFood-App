@@ -4,29 +4,30 @@ import { Button } from '../components/base.jsx';
 import { LF_SHADOWS } from '../tokens/palettes.js';
 import LFIcon from '../icons/LFIcon.jsx';
 
+// Las claves de texto (no el texto) viven aquí: se traducen al pintar.
 const SLIDES = [
   {
-    eyebrow: '01 · Bienvenida',
-    title: 'Hola, yo soy\nLazyFood 🥑',
-    body: 'Gestiono tu nevera para que tú no tengas que pensar. Tu única misión: cocinar (o no).',
+    eyebrow: 'onboarding.slide1.eyebrow',
+    title: 'onboarding.slide1.title',
+    body: 'onboarding.slide1.body',
     art: 'hello',
   },
   {
-    eyebrow: '02 · Escanea y listo',
-    title: 'Foto al ticket,\nyo hago el resto.',
-    body: 'Apunta al ticket del super y rellenamos tu inventario en segundos. Sin apuntar nada a mano.',
+    eyebrow: 'onboarding.slide2.eyebrow',
+    title: 'onboarding.slide2.title',
+    body: 'onboarding.slide2.body',
     art: 'ticket',
   },
   {
-    eyebrow: '03 · Cocina sin pensar',
-    title: '¿Qué hay\npara cenar?',
-    body: 'Te propongo recetas con lo que ya tienes. Cero esfuerzo, cero desperdicio.',
+    eyebrow: 'onboarding.slide3.eyebrow',
+    title: 'onboarding.slide3.title',
+    body: 'onboarding.slide3.body',
     art: 'chef',
   },
 ];
 
 export default function Onboarding({ onDone }) {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const [step, setStep] = useState(0);
   const s = SLIDES[step];
   const last = step === SLIDES.length - 1;
@@ -34,9 +35,9 @@ export default function Onboarding({ onDone }) {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: pal.bg }}>
       <div style={{ padding: '20px 24px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontFamily: fonts.mono, fontSize: 11, color: pal.inkSoft, letterSpacing: '0.05em' }}>
-          {s.eyebrow.toUpperCase()}
+          {t(s.eyebrow).toUpperCase()}
         </div>
-        {!last && <button onClick={onDone} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 13, cursor: 'pointer' }}>Saltar</button>}
+        {!last && <button onClick={onDone} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 13, cursor: 'pointer' }}>{t('onboarding.skip')}</button>}
       </div>
 
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 24px' }}>
@@ -48,8 +49,8 @@ export default function Onboarding({ onDone }) {
           fontFamily: fonts.display, fontSize: 38, lineHeight: 1.02,
           fontWeight: 700, color: pal.ink, margin: 0,
           whiteSpace: 'pre-line', letterSpacing: '-0.025em',
-        }}>{s.title}</h1>
-        <p style={{ color: pal.inkSoft, fontSize: 15, lineHeight: 1.5, marginTop: 14 }}>{s.body}</p>
+        }}>{t(s.title)}</h1>
+        <p style={{ color: pal.inkSoft, fontSize: 15, lineHeight: 1.5, marginTop: 14 }}>{t(s.body)}</p>
       </div>
 
       <div style={{ padding: '0 24px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
@@ -65,7 +66,7 @@ export default function Onboarding({ onDone }) {
         </div>
         <Button tone="primary" size="lg" iconRight="arrowRight"
           onClick={() => last ? onDone() : setStep(step + 1)}>
-          {last ? 'Empezar' : 'Siguiente'}
+          {last ? t('onboarding.start') : t('common.next')}
         </Button>
       </div>
     </div>

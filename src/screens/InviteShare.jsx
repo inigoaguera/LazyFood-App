@@ -3,26 +3,29 @@ import { useLF } from '../components/ctx.js';
 import { Button, toast } from '../components/base.jsx';
 import { LF_SHADOWS } from '../tokens/palettes.js';
 import { createInvite } from '../api/session.js';
+import { errMsg } from '../i18n/index.js';
+
+const INVITE_DAYS = 7;
 
 // Modal-like componente para Profile.
 export default function InviteShare({ householdId, householdName, onClose }) {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const [invite, setInvite] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const generate = async () => {
     setBusy(true);
     try {
-      const inv = await createInvite(householdId, { ttlHours: 7 * 24, maxUses: 5 });
+      const inv = await createInvite(householdId, { ttlHours: INVITE_DAYS * 24, maxUses: 5 });
       setInvite(inv);
     } catch (e) {
-      toast(e?.message || 'Error', 'error');
+      toast(errMsg(e), 'error');
     } finally { setBusy(false); }
   };
 
   const share = async () => {
     if (!invite) return;
-    const text = `Te invito a unirte a "${householdName}" en LazyFood: ${invite.url}`;
+    const text = t('household.invite.shareText', { name: householdName, url: invite.url });
     if (navigator.share) {
       try { await navigator.share({ title: 'LazyFood', text, url: invite.url }); }
       catch { /* user canceled */ }
@@ -35,9 +38,9 @@ export default function InviteShare({ householdId, householdName, onClose }) {
     if (!invite) return;
     try {
       await navigator.clipboard.writeText(invite.url);
-      toast('Link copiado al portapapeles');
+      toast(t('household.invite.linkCopied'));
     } catch {
-      toast('No se pudo copiar', 'error');
+      toast(t('household.invite.copyFailed'), 'error');
     }
   };
 
@@ -55,15 +58,15 @@ export default function InviteShare({ householdId, householdName, onClose }) {
       }}>
         <div style={{ width: 40, height: 4, borderRadius: 2, background: pal.lineStrong, margin: '0 auto 12px' }}/>
         <h2 style={{ fontFamily: fonts.display, fontSize: 22, fontWeight: 700, color: pal.ink, margin: '0 0 4px' }}>
-          Invitar a {householdName}
+          {t('household.invite.title', { name: householdName })}
         </h2>
         <p style={{ color: pal.inkSoft, fontSize: 13, margin: '0 0 18px' }}>
-          Genera un link y compártelo. Cualquiera con el link se une a la casa.
+          {t('household.invite.intro')}
         </p>
 
         {!invite ? (
           <Button tone="green" size="lg" fullWidth onClick={generate} disabled={busy}>
-            {busy ? 'Generando…' : 'Generar link de invitación'}
+            {busy ? t('household.invite.generating') : t('household.invite.generate')}
           </Button>
         ) : (
           <div>
@@ -73,11 +76,11 @@ export default function InviteShare({ householdId, householdName, onClose }) {
               wordBreak: 'break-all', boxShadow: LF_SHADOWS.sm,
             }}>{invite.url}</div>
             <div style={{ marginTop: 8, fontSize: 11, color: pal.inkFaint }}>
-              Caduca en 7 días · Hasta {invite.maxUses} usos
+              {t('household.invite.expiry', { days: INVITE_DAYS, n: invite.maxUses })}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-              <Button tone="green" size="md" fullWidth icon="sparkle" onClick={share}>Compartir</Button>
-              <Button tone="soft" size="md" fullWidth onClick={copy}>Copiar</Button>
+              <Button tone="green" size="md" fullWidth icon="sparkle" onClick={share}>{t('common.share')}</Button>
+              <Button tone="soft" size="md" fullWidth onClick={copy}>{t('common.copy')}</Button>
             </div>
           </div>
         )}
