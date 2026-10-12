@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { nameWords } from '../util/stock.js';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getSetting, setSetting } from '../db.js';
 import { useLF } from '../components/ctx.js';
@@ -11,7 +12,7 @@ import { toast } from '../components/base.jsx';
 import { RecipeThumb } from '../data/recipeThumbs.jsx';
 import { inventoryForPrompt } from '../util/aiInventory.js';
 import { useBackClose } from '../util/nav.js';
-import { t, errMsg } from '../i18n/index.js';
+import { t, errMsg, getLang } from '../i18n/index.js';
 
 // Se guarda en el historial, así que se crea con t() en el momento de usarlo
 // (no al importar el módulo) para que salga en el idioma activo.
@@ -69,8 +70,11 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
   // Se poda a los últimos MAX_HISTORY: cada respuesta lleva recetas completas
   // dentro, así que sin tope la entrada de IndexedDB crece sin límite y se
   // reescribe entera en cada mensaje.
+  // Si el idioma cambia con el chat abierto (p.ej. desde otro móvil), App tira
+  // el historial; no se reescribe con mensajes del idioma anterior.
+  const langAtMount = useRef(getLang());
   useEffect(() => {
-    if (!hid || !hydrated) return;
+    if (!hid || !hydrated || getLang() !== langAtMount.current) return;
     setSetting(`antojos:${hid}`, messages.slice(-MAX_HISTORY)).catch(() => {});
   }, [messages, hid, hydrated]);
 
@@ -142,10 +146,17 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
     }
   };
 
+  // ¿Esta sugerencia ya está guardada? Por nombre completo (sin tildes ni
+  // mayúsculas) o con un nombre contenido entero en el otro. Antes bastaba la
+  // primera palabra, y "Easy…" o "Pasta…" daba por guardada cualquier receta
+  // que empezara igual y abría otra al pulsar "Ver".
   const matchExisting = (name) => {
-    const lower = (name || '').toLowerCase();
-    const first = lower.split(' ')[0];
-    return recipes.find((r) => r.name.toLowerCase().includes(first) || lower.includes(r.name.toLowerCase().split(' ')[0]));
+    const words = nameWords(name).join(' ');
+    if (!words) return null;
+    return recipes.find((r) => {
+      const other = nameWords(r.name).join(' ');
+      return other && (other === words || ` ${words} `.includes(` ${other} `) || ` ${other} `.includes(` ${words} `));
+    }) || null;
   };
 
   return (

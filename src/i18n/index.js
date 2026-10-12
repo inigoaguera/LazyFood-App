@@ -132,6 +132,22 @@ export function tNodes(key, vars = {}) {
   ));
 }
 
+// Búsqueda inversa: la clave cuyo texto es `value` (sin distinguir mayúsculas)
+// bajo `path`, en el idioma activo y si no en los demás. Sirve a los campos de
+// texto libre que guardan una clave de dominio, como la unidad de una línea de
+// gasto: el usuario ve y escribe "pcs" o "uds", y se guarda siempre "uds".
+export function keyForLabel(path, value) {
+  const v = String(value ?? '').trim().toLowerCase();
+  if (!v) return null;
+  for (const lang of [current, ...Object.keys(DICTS).filter((l) => l !== current)]) {
+    const node = lookup(DICTS[lang], path);
+    if (!node || typeof node !== 'object') continue;
+    const hit = Object.entries(node).find(([, label]) => typeof label === 'string' && label.toLowerCase() === v);
+    if (hit) return hit[0];
+  }
+  return null;
+}
+
 // ─── Formatos ───────────────────────────────────────────────────────────
 // Fecha con el locale del idioma activo. `date` admite Date, timestamp o
 // 'YYYY-MM-DD' (que se lee a mediodía local para no saltar de día por la zona).
@@ -161,7 +177,9 @@ export const monthShort = (m) => t(`common.month.short.${m}`);       // ene · J
 export function errMsg(e, fallbackKey = 'errors.generic') {
   const code = e?.code || (e?.message === 'UNAUTHORIZED' ? 'UNAUTHORIZED' : null);
   if (code && has(`errors.code.${code}`)) return t(`errors.code.${code}`);
-  if (e?.name === 'TypeError' && /fetch/i.test(e?.message || '')) return t('errors.network');
+  // Fallo de red de fetch: Chrome dice 'Failed to fetch', Firefox 'NetworkError…'
+  // y Safari/iOS (el PWA principal) 'Load failed'.
+  if (e?.name === 'TypeError' && /fetch|load failed|network/i.test(e?.message || '')) return t('errors.network');
   // Errores de Gemini que el proxy reenvía tal cual: traen su propio JSON (en
   // inglés técnico) y un `code` numérico. Se traducen por estado HTTP.
   const status = Number(e?.status);

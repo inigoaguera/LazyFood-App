@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { t, fmtDateTime, errMsg } from '../i18n/index.js';
+import { t, fmtDateTime, errMsg, getLang } from '../i18n/index.js';
 import { groupLabel } from '../i18n/labels.js';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getSetting, setSetting, RECIPE_USES_EXPIRING_BY_NAME } from '../db.js';
@@ -73,7 +73,9 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
     let cancelled = false;
     (async () => {
       const cached = await getSetting(`aiRecipes:${hid}`);
-      if (cached && !cancelled) setAiData(cached);
+      // Las sugerencias son texto de la IA en un idioma: si no es el actual
+      // (cachés de antes de i18n eran castellano) no se enseñan.
+      if (cached && !cancelled && (cached.lang || 'es') === getLang()) setAiData(cached);
       const desc = await getSetting(`descartadas:${hid}`);
       if (!cancelled && desc?.firma && desc.firma === pantrySignature(items)) {
         setRechazadas(desc.recetas || []);
@@ -105,6 +107,7 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
     if (!hid || !aiData) return;
     if (!proxyConfigured()) { toast(t('recipes.hub.configureApi'), 'error'); return; }
     const slotKey = `${section}:${indexInSection}`;
+    const reqLang = getLang();
     // Marcar el slot como "dándole otra vuelta..."
     setReplacingSlots((prev) => { const n = new Set(prev); n.add(slotKey); return n; });
     const inv = inventoryForPrompt(items);
@@ -112,12 +115,14 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
     const avoid = construirAvoid(aiData);
     try {
       const fresh = await suggestReplacementRecipe({ inventory: inv, section, avoid });
+      // Si cambiaste de idioma mientras pensaba, la respuesta ya no vale.
+      if (getLang() !== reqLang) return;
       if (!fresh?.name) throw new Error(t('recipes.hub.nothingCame'));
       fresh.effort = Math.max(1, (fresh.tools || []).length);
       const next = { ...aiData, [section]: [...(aiData[section] || [])] };
       next[section][indexInSection] = fresh;
       setAiData(next);
-      await setSetting(`aiRecipes:${hid}`, next);
+      await setSetting(`aiRecipes:${hid}`, { ...next, lang: reqLang });
       // La × es la señal más clara de "esto no me gusta" y hasta ahora se tiraba:
       // la receta salía de la lista y podía volver en el siguiente reemplazo.
       await recordarDescarte(descartada);
@@ -139,11 +144,13 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
     // Vaciamos las sugerencias actuales y mostramos la tarjeta global de "pensando"
     setAiData(null);
     setAiBusy(true);
+    const reqLang = getLang();
     try {
       const inv = inventoryForPrompt(items);
       // Sin esta lista, mismo inventario y mismo prompt devolvían casi las
       // mismas quince recetas cada vez que pulsabas Inspírame.
       const result = await suggestRecipesForHub({ inventory: inv, avoid });
+      if (getLang() !== reqLang) return;
       // Derivar effort = tools.length (mín 1) para que el icono 🍳 cuadre con la lista de instrumentos
       const enrichEffort = (arr) => (arr || []).map((r) => ({
         ...r,
@@ -154,6 +161,7 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
         chef: enrichEffort(result.chef),
         oneOff: enrichEffort(result.oneOff),
         generatedAt: Date.now(),
+        lang: reqLang,
       };
       setAiData(fresh);
       await setSetting(`aiRecipes:${hid}`, fresh);

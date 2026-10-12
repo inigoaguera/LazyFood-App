@@ -34,8 +34,17 @@ export async function patchMe(request, env, cors, auth) {
   const args = [];
   if (typeof body.name === 'string') { updates.push('name=?'); args.push(body.name); }
   if (typeof body.avatar === 'string') { updates.push('avatar=?'); args.push(body.avatar); }
-  if (body.prefs && typeof body.prefs === 'object') {
-    updates.push('prefs_json=?'); args.push(JSON.stringify(body.prefs));
+  // Las prefs se FUSIONAN con las guardadas: cada pantalla manda sólo lo que
+  // cambia ({palette}, {lang}…). Reemplazándolas enteras, un móvil (o una
+  // pantalla) con una copia vieja de `me` pisaba lo que otro acababa de cambiar:
+  // elegir paleta tras cambiar de idioma devolvía la cuenta al idioma anterior.
+  if (body.prefs && typeof body.prefs === 'object' && !Array.isArray(body.prefs)) {
+    const row = await env.lazyfood_db.prepare(
+      'SELECT prefs_json FROM users WHERE id=?'
+    ).bind(auth.userId).first();
+    let current = {};
+    try { current = row?.prefs_json ? JSON.parse(row.prefs_json) || {} : {}; } catch { current = {}; }
+    updates.push('prefs_json=?'); args.push(JSON.stringify({ ...current, ...body.prefs }));
   }
   if (!updates.length) return json({ ok: true }, 200, cors);
   args.push(auth.userId);

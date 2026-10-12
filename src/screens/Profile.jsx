@@ -42,10 +42,14 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
     return () => { cancelled = true; };
   }, [currentHousehold]);
 
+  // Sólo se manda la preferencia que cambia: el Worker fusiona prefs. Mandar
+  // el objeto entero desde esta copia local (que no se entera de un cambio de
+  // idioma) devolvía la cuenta al idioma anterior al elegir paleta o letra.
   const updatePref = async (k, v) => {
-    const next = { ...(me?.prefs || {}), [k]: v };
-    await patchMe({ prefs: next });
-    setMe((cur) => cur ? { ...cur, prefs: next } : cur);
+    try {
+      const fresh = await patchMe({ prefs: { [k]: v } });
+      setMe(fresh || ((cur) => (cur ? { ...cur, prefs: { ...(cur.prefs || {}), [k]: v } } : cur)));
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const handleLang = async (k) => {

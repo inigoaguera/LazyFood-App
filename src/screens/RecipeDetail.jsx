@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { unitLabel } from '../i18n/labels.js';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db.js';
 import { useLF } from '../components/ctx.js';
@@ -9,7 +10,7 @@ import { patch as resourcePatch, create as resourceCreate } from '../api/resourc
 import { syncHousehold } from '../api/sync.js';
 import RecipeEditor from './RecipeEditor.jsx';
 import { scaleRecipeServings, proxyConfigured } from '../api.js';
-import { recipeStockStatus } from '../util/stock.js';
+import { recipeStockStatus, findInventoryMatch } from '../util/stock.js';
 import { useBackClose } from '../util/nav.js';
 import { t, errMsg } from '../i18n/index.js';
 
@@ -154,20 +155,9 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
     for (const ing of r.ingredients) {
       // Prioridad 1: vinculado por itemId. Prioridad 2: fuzzy por nombre.
       let match = ing.itemId ? items.find((it) => it.id === ing.itemId) : null;
-      if (!match) {
-        // Sin guarda, un ingrediente sin nombre daría includes('') === true y
-        // descontaría del primer item del inventario. Mismo patrón que usa
-        // util/stock.js para este mismo match difuso.
-        const ingLower = (ing.name || '').toLowerCase();
-        const q = ingLower.split(' ')[0];
-        if (q) {
-          match = items.find((it) => {
-            const n = (it.name || '').toLowerCase();
-            if (!n) return false;
-            return n.includes(q) || ingLower.includes(n.split(' ')[0]);
-          });
-        }
-      }
+      // Mismo emparejado por nombre que el badge de stock (util/stock.js):
+      // un ingrediente sin nombre no casa con nada.
+      if (!match) match = findInventoryMatch(ing.name, items);
       if (!match) {
         missing.push(ing);
         continue;
@@ -215,7 +205,8 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
           onClick: async () => {
             try {
               for (const m of missing) {
-                const qtyStr = [m.qty, m.unit].filter(Boolean).join(' ');
+                // Texto libre que se guarda tal cual: con la etiqueta, no la clave.
+                const qtyStr = [m.qty, m.unit && unitLabel(m.unit)].filter(Boolean).join(' ');
                 await resourceCreate('shopping', hid, {
                   name: m.name, qty: qtyStr, cat: null,
                   checked: 0, auto: 1, count: 1,
@@ -321,7 +312,7 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
                 {ing.note && <div style={{ fontSize: 11, color: pal.inkSoft, marginTop: 2 }}>{ing.note}</div>}
               </div>
               <div style={{ fontSize: 13, color: pal.inkSoft }}>
-                {ing.qty}{ing.unit ? ` ${ing.unit}` : ''}
+                {ing.qty}{ing.unit ? ` ${unitLabel(ing.unit)}` : ''}
               </div>
             </div>
           ))}

@@ -5,7 +5,7 @@ import { LF_PALETTES, LF_DENSITIES } from './tokens/palettes.js';
 import { LF_FONTS, lfEnsureFont } from './tokens/fonts.js';
 import { db, setSetting, hasLegacyData } from './db.js';
 import { onUnauthorized } from './api/client.js';
-import { fetchMe, setCurrentHousehold, patchHousehold, patchMe } from './api/session.js';
+import { fetchMe, setCurrentHousehold, patchHousehold } from './api/session.js';
 import { syncHousehold, setupFocusSync } from './api/sync.js';
 import { getJwt } from './util/jwt.js';
 import { goBack, useBackLayers, useBackClose } from './util/nav.js';
@@ -13,7 +13,8 @@ import { goBack, useBackLayers, useBackClose } from './util/nav.js';
 import { BottomNav, ToastHost } from './components/base.jsx';
 import DebugOverlay from './screens/DebugOverlay.jsx';
 import { isDebugActive } from './util/debug.js';
-import { t, setLang, normalizeLang, storedLang, detectLang, rememberLangLocally } from './i18n/index.js';
+import { t, setLang, getLang, normalizeLang, storedLang, detectLang, rememberLangLocally } from './i18n/index.js';
+import { syncLangToAccount, resetLangOnLogout, onEffectiveLangChange } from './i18n/switch.js';
 import Login from './screens/Login.jsx';
 import Verify from './screens/Verify.jsx';
 import HouseholdPicker from './screens/HouseholdPicker.jsx';
@@ -91,32 +92,39 @@ export default function App() {
 
   useEffect(() => { lfEnsureFont(fontKey); }, [fontKey]);
 
-  // Idioma: el de tu cuenta (prefs) manda; antes del login, el elegido en este
-  // móvil (settings.lang / localStorage) y si no, el del sistema. Se fija aquí,
-  // en el render, para que los hijos ya pinten con el idioma nuevo.
+  // Idioma, por orden (ver el modelo en i18n/switch.js):
+  //   1. un cambio aún sin confirmar por el servidor (langPending),
+  //   2. el de tu cuenta (prefs.lang),
+  //   3. el último que se usó en este móvil (localStorage),
+  //   4. el elegido aquí y guardado en IndexedDB (respaldo si iOS borró el otro),
+  //   5. el del sistema.
+  // Se fija aquí, en el render, para que los hijos ya pinten con él.
   const pendingLang = normalizeLang(settings.langPending);
   const lang = setLang(
-    pendingLang || normalizeLang(userPrefs.lang) || normalizeLang(settings.lang) || storedLang() || detectLang()
+    pendingLang || normalizeLang(userPrefs.lang) || storedLang() || normalizeLang(settings.lang) || detectLang()
   );
-  useEffect(() => { rememberLangLocally(lang); }, [lang]);
+  useEffect(() => {
+    rememberLangLocally(lang);
+    onEffectiveLangChange(lang).catch(() => {});
+  }, [lang]);
 
-  // La cuenta no tiene el idioma en uso: primer login (o cuenta anterior a
-  // esta función), o un cambio de idioma cuyo PATCH falló (langPending, ver
-  // i18n/switch.js). Se sube el idioma actual y se limpia la marca. Depende de
-  // `me`, que se relee con cada cambio de settings (incluida la marca y cada
-  // /me): así sube el cambio al momento y lo reintenta al volver la conexión.
+  // Sincronización con la cuenta (i18n/switch.js):
+  //   - Cuenta sin idioma (primer login o cuenta anterior a esta función): sólo
+  //     se le sube una elección EXPLÍCITA de este móvil (settings.lang). Sin
+  //     ella, cada móvil sigue con su idioma del sistema; así un móvil en inglés
+  //     no pasa a inglés la cuenta de alguien que siempre la usó en castellano.
+  //   - Hay un cambio pendiente: se (re)intenta subir con cada /me y con cada
+  //     cambio de la marca. syncLangToAccount va en serie y no hace nada si ya
+  //     no hay marca, así que llamarla de más es inofensivo.
+  const explicitLang = normalizeLang(settings.lang);
   useEffect(() => {
     if (!me?.id || !me.prefs) return;
-    const needsSync = pendingLang ? me.prefs.lang !== pendingLang : !normalizeLang(me.prefs.lang);
-    if (!needsSync) {
-      if (pendingLang) setSetting('langPending', null);
+    if (!pendingLang && !normalizeLang(me.prefs.lang) && explicitLang) {
+      setSetting('langPending', explicitLang);
       return;
     }
-    patchMe({ prefs: { ...me.prefs, lang } })
-      .then(() => setSetting('langPending', null))
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [me]);
+    if (pendingLang) syncLangToAccount();
+  }, [me, pendingLang, explicitLang]);
 
   const pal = LF_PALETTES[palette] || LF_PALETTES.huerto;
   const fonts = LF_FONTS[fontKey] || LF_FONTS.playful;
@@ -141,6 +149,7 @@ export default function App() {
     onUnauthorized(() => {
       setSetting('me', null);
       setSetting('currentHouseholdId', null);
+      resetLangOnLogout(getLang()).catch(() => {});
     });
   }, []);
 

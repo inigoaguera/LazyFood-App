@@ -9,7 +9,7 @@ import { syncHousehold } from '../api/sync.js';
 import { RECIPE_THUMBS } from '../data/recipeThumbs.jsx';
 import AddEditModal from './AddEditItem.jsx';
 import { t, errMsg } from '../i18n/index.js';
-import { groupLabel } from '../i18n/labels.js';
+import { groupLabel, unitLabel } from '../i18n/labels.js';
 
 const IMG_OPTIONS = Object.entries(RECIPE_THUMBS);
 // Los ids son lo que se guarda en la receta; la etiqueta se pinta con groupLabel().
@@ -380,7 +380,8 @@ const IngredientRow = ({ ing, inventory, hid, onChange, onRemove }) => {
   const sendToShopping = async () => {
     if (!hid || !hasName) return;
     try {
-      const qtyStr = [ing.qty, ing.unit].filter(Boolean).join(' ');
+      // Texto libre que se guarda tal cual: con la etiqueta, no la clave.
+      const qtyStr = [ing.qty, ing.unit && unitLabel(ing.unit)].filter(Boolean).join(' ');
       await resourceCreate('shopping', hid, {
         name: ing.name.trim(), qty: qtyStr, cat: null,
         checked: 0, auto: 1, count: 1,

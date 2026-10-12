@@ -11,6 +11,7 @@ export default function Login({ pendingInvite }) {
   const { pal, fonts, lang, t } = useLF();
   const [email, setEmail] = useState('');
   const [phase, setPhase] = useState('form'); // form | sending | sent | error
+  // Se guarda el error, no el texto: así sigue al selector de idioma.
   const [errorMsg, setErrorMsg] = useState('');
   const isDebug = isDebugActive();
   const [diag, setDiag] = useState(null);
@@ -47,7 +48,7 @@ export default function Login({ pendingInvite }) {
       await requestMagicLink(email.trim().toLowerCase(), lang);
       setPhase('sent');
     } catch (e) {
-      setErrorMsg(errMsg(e, 'auth.login.sendFailed'));
+      setErrorMsg({ e, fallback: 'auth.login.sendFailed' });
       setPhase('error');
     }
   };
@@ -66,7 +67,7 @@ export default function Login({ pendingInvite }) {
         window.location.reload();
       }
     } catch (e) {
-      setErrorMsg(errMsg(e, 'auth.login.badCode'));
+      setErrorMsg({ e, fallback: 'auth.login.badCode' });
     } finally {
       setVerifying(false);
     }
@@ -126,7 +127,7 @@ export default function Login({ pendingInvite }) {
             />
             {errorMsg && (
               <div style={{ marginTop: 12, padding: 10, background: pal.dangerSoft, color: pal.danger, borderRadius: 10, fontSize: 13 }}>
-                {errorMsg}
+                {errMsg(errorMsg.e, errorMsg.fallback)}
               </div>
             )}
             <div style={{ marginTop: 18 }}>
@@ -158,7 +159,7 @@ export default function Login({ pendingInvite }) {
             />
             {errorMsg && (
               <div style={{ marginTop: 12, padding: 10, background: pal.dangerSoft, color: pal.danger, borderRadius: 10, fontSize: 13 }}>
-                {errorMsg}
+                {errMsg(errorMsg.e, errorMsg.fallback)}
               </div>
             )}
             <div style={{ marginTop: 14 }}>

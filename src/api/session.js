@@ -2,6 +2,7 @@
 import { api } from './client.js';
 import { getSetting, setSetting } from '../db.js';
 import { saveJwt, clearJwt } from '../util/jwt.js';
+import { getLang } from '../i18n/index.js';
 
 // `lang` decide el idioma del email: aún no hay cuenta (o no hay sesión) de
 // donde sacarlo, así que lo manda el cliente.
@@ -40,6 +41,12 @@ export async function logout() {
   await clearJwt();
   await setSetting('me', null);
   await setSetting('currentHouseholdId', null);
+  // Un cambio de idioma sin confirmar es de ESTA cuenta: no debe subirse a la
+  // siguiente. El login sale en el idioma que se estaba usando. (Lo mismo que
+  // resetLangOnLogout de i18n/switch.js, que no se importa aquí para no crear
+  // un ciclo: switch.js importa este módulo.)
+  await setSetting('langPending', null);
+  await setSetting('lang', getLang());
 }
 
 export async function fetchMe() {

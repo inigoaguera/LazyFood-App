@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { namesMatch } from '../util/stock.js';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db.js';
 import { useLF } from '../components/ctx.js';
@@ -23,14 +24,12 @@ export default function UseIngredient({ item, hid, onOpenRecipe, onOpenChat, onC
   // Recetas guardadas que mencionan el ingrediente (linked or fuzzy)
   const matched = useMemo(() => {
     const detailsByName = new Map(recipeDetails.map((d) => [d.matchName || d.name, d]));
-    const q = item.name.toLowerCase().split(' ')[0];
     return recipes.filter((r) => {
       const det = detailsByName.get(r.name);
       if (!det?.ingredients) return false;
       return det.ingredients.some((ing) => {
         if (ing.itemId === item.id) return true;
-        const ingName = (ing.name || '').toLowerCase();
-        return ingName.includes(q) || q.includes(ingName.split(' ')[0]);
+        return namesMatch(ing.name, item.name);
       });
     });
   }, [recipes, recipeDetails, item]);
