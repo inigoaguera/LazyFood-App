@@ -8,6 +8,7 @@ import { RecipeThumb } from '../data/recipeThumbs.jsx';
 import { autoPlanMenu, proxyConfigured } from '../api.js';
 import { setMenuSlot as cloudSetMenuSlot } from '../api/resources.js';
 import { inventoryForPrompt } from '../util/aiInventory.js';
+import { useBackClose } from '../util/nav.js';
 
 const DAYS = [
   { id: 'mon', short: 'L', long: 'Lunes' },
@@ -40,6 +41,8 @@ export default function Menu({ onBack, onOpenRecipe }) {
   );
   const [picker, setPicker] = useState(null);
   const [actions, setActions] = useState(null);
+  useBackClose(!!picker, () => setPicker(null));
+  useBackClose(!!actions, () => setActions(null));
   const [busy, setBusy] = useState(false);
 
   const recipesById = Object.fromEntries(recipes.map((r) => [r.id, r]));

@@ -10,11 +10,13 @@ import { syncHousehold } from '../api/sync.js';
 import RecipeEditor from './RecipeEditor.jsx';
 import { scaleRecipeServings, proxyConfigured } from '../api.js';
 import { recipeStockStatus } from '../util/stock.js';
+import { useBackClose } from '../util/nav.js';
 
 export default function RecipeDetail({ recipeId, onBack, onCooked }) {
   const { pal, fonts, currentHouseholdMeta } = useLF();
   const hid = currentHouseholdMeta?.id;
   const [editing, setEditing] = useState(false);
+  useBackClose(editing, () => setEditing(false));
   const recipe = useLiveQuery(() => db.recipes.get(recipeId), [recipeId]);
   const detail = useLiveQuery(async () => {
     if (!recipe || !hid) return null;

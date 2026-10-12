@@ -8,6 +8,7 @@ import { onUnauthorized } from './api/client.js';
 import { fetchMe, setCurrentHousehold, patchHousehold } from './api/session.js';
 import { syncHousehold, setupFocusSync } from './api/sync.js';
 import { getJwt } from './util/jwt.js';
+import { goBack, useBackLayers, useBackClose } from './util/nav.js';
 
 import { BottomNav, ToastHost } from './components/base.jsx';
 import DebugOverlay from './screens/DebugOverlay.jsx';
@@ -49,6 +50,10 @@ const AppStyles = ({ pal, fonts }) => (
     ::-webkit-scrollbar { display: none; }
   `}</style>
 );
+
+// Pantallas de la BottomNav: no se apilan entre sí, siempre vuelven a home.
+const ROOT_TABS = ['list', 'recipes', 'expenses'];
+const HOUSEHOLD_ROUTES = ['householdPicker', 'createHousehold', 'joinHousehold'];
 
 // Lee ?token y ?invite de la URL una sola vez en boot, los limpia para evitar replays.
 function readUrlParams() {
@@ -157,11 +162,32 @@ export default function App() {
   useEffect(() => setupFocusSync(() => hidRef.current), []);
 
   // ─── Routing dentro de la app ──────────────────────────
-  const [route, setRoute] = useState('home');
-  const [params, setParams] = useState({});
+  // Pila de pantallas en vez de una ruta suelta: es lo que permite que el back
+  // del sistema (Android) retroceda en vez de cerrar la PWA. Ver util/nav.js.
+  const [stack, setStack] = useState([{ route: 'home', params: {} }]);
+  const { route, params } = stack[stack.length - 1];
   const [modal, setModal] = useState(null);
   const [editItem, setEditItem] = useState(null);
-  const go = (r, p = {}) => { setRoute(r); setParams(p); };
+
+  const go = (r, p = {}, opts = {}) => setStack((s) => {
+    if (r === 'home') return [{ route: 'home', params: {} }];
+    // Las tabs de la BottomNav no se apilan entre sí: siempre cuelgan de home.
+    if (ROOT_TABS.includes(r)) return [{ route: 'home', params: {} }, { route: r, params: p }];
+    if (opts.replace) return [...s.slice(0, -1), { route: r, params: p }];
+    return [...s, { route: r, params: p }];
+  });
+
+  // El único que hace pop es el listener de popstate, así que el botón atrás de
+  // la app y el gesto nativo recorren exactamente el mismo camino.
+  const back = () => goBack();
+  useBackLayers(stack.length - 1, () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)));
+  useBackClose(!!modal, () => setModal(null));
+
+  // Si ya hay casa válida, las pantallas de alta de casa no pintan nada.
+  useEffect(() => {
+    if (HOUSEHOLD_ROUTES.includes(route) && currentHousehold
+      && myHouseholds.some((h) => h.id === currentHousehold)) go('home');
+  }, [route, currentHousehold, myHouseholds]);
 
   // ─── Render decisión: árbol auth → casa → app ───────────
   const screen = (() => {
@@ -198,10 +224,10 @@ export default function App() {
     const isValidHid = currentHousehold && myHouseholds.some((h) => h.id === currentHousehold);
     if (!isValidHid) {
       if (route === 'createHousehold') {
-        return <CreateHousehold onCreated={() => go('home')} onBack={() => go('householdPicker')} />;
+        return <CreateHousehold onCreated={() => go('home')} onBack={back} />;
       }
       if (route === 'joinHousehold') {
-        return <JoinHousehold onJoined={() => go('home')} onBack={() => go('householdPicker')} />;
+        return <JoinHousehold onJoined={() => go('home')} onBack={back} />;
       }
       return <HouseholdPicker
         onPick={() => go('home')}
@@ -224,22 +250,22 @@ export default function App() {
     // 6. App normal
     switch (route) {
       case 'home':       return <Home onOpenLocation={(loc) => go('list', { loc })} onNav={(t) => go(t)} onOpenRecipe={(id) => go('recipeDetail', { id })} onOpenChat={(prompt) => go('antojos', { prompt })} />;
-      case 'list':       return <Inventory initialLoc={params.loc || 'all'} onBack={() => go('home')} onEdit={(it) => { setEditItem(it); setModal('edit'); }} onAdd={() => { setEditItem(null); setModal('add'); }} />;
-      case 'recipes':    return <RecipeHub onBack={() => go('home')} onOpenRecipe={(id) => go('recipeDetail', { id })} onOpenChat={() => go('antojos')} />;
-      case 'recipeDetail': return <RecipeDetail recipeId={params.id} onBack={() => go('recipes')} onCooked={() => go('home')} />;
-      case 'antojos':    return <AntojosChat onClose={() => go('recipes')} onOpenRecipe={(id) => go('recipeDetail', { id })} initialPrompt={params.prompt} />;
-      case 'scan':       return <Scanner onBack={() => go('home')} onDone={() => go('list')} />;
-      case 'shopping':   return <Shopping onBack={() => go('home')} />;
-      case 'expenses':   return <Expenses onBack={() => go('home')} />;
-      case 'menu':       return <Menu onBack={() => go('home')} onOpenRecipe={(id) => go('recipeDetail', { id })} />;
-      case 'profile':    return <Profile onBack={() => go('home')}
+      case 'list':       return <Inventory initialLoc={params.loc || 'all'} onBack={back} onEdit={(it) => { setEditItem(it); setModal('edit'); }} onAdd={() => { setEditItem(null); setModal('add'); }} />;
+      case 'recipes':    return <RecipeHub onBack={back} onOpenRecipe={(id) => go('recipeDetail', { id })} onOpenChat={() => go('antojos')} />;
+      case 'recipeDetail': return <RecipeDetail recipeId={params.id} onBack={back} onCooked={() => go('home')} />;
+      case 'antojos':    return <AntojosChat onClose={back} onOpenRecipe={(id) => go('recipeDetail', { id })} initialPrompt={params.prompt} />;
+      case 'scan':       return <Scanner onBack={back} onDone={() => go('list')} />;
+      case 'shopping':   return <Shopping onBack={back} />;
+      case 'expenses':   return <Expenses onBack={back} />;
+      case 'menu':       return <Menu onBack={back} onOpenRecipe={(id) => go('recipeDetail', { id })} />;
+      case 'profile':    return <Profile onBack={back}
                               onSwitchHousehold={async () => { await setCurrentHousehold(null); go('home'); }}
                               onLogout={() => window.location.reload()} />;
-      // Si ya está en casa válida y por algún motivo entra a estas, redirige
+      // Si ya está en casa válida y por algún motivo entra a estas, el efecto
+      // de arriba redirige a home en el siguiente commit.
       case 'householdPicker':
       case 'createHousehold':
       case 'joinHousehold':
-        go('home');
         return null;
       default: return null;
     }

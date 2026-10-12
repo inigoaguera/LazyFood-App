@@ -11,6 +11,7 @@ import RecipeEditor from './RecipeEditor.jsx';
 import { recipeStockStatus, stockBadge } from '../util/stock.js';
 import RecipeFilters, { applyFilters, countActive } from './RecipeFilters.jsx';
 import { inventoryForPrompt, pantrySignature } from '../util/aiInventory.js';
+import { useBackClose } from '../util/nav.js';
 
 // Re-exports para mantener compat con código que ya importa de aquí.
 export { RECIPE_THUMBS, RecipeThumb };
@@ -162,6 +163,9 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
   const [preview, setPreview] = useState(null); // recipe object IA | null
   const [filters, setFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = useState(false);
+  useBackClose(!!editing, () => setEditing(null));
+  useBackClose(!!preview, () => setPreview(null));
+  useBackClose(filtersOpen, () => setFiltersOpen(false));
   const filteredYours = applyFilters(yours, filters, { stockByName: stockFor, detailsByName });
   const activeCount = countActive(filters);
 

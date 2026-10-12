@@ -14,6 +14,7 @@ import { cacheClearHousehold } from '../db.js';
 import { buildSamplePayload } from '../data/seed.js';
 import { useCategories } from '../util/categories.js';
 import InviteShare from './InviteShare.jsx';
+import { useBackClose } from '../util/nav.js';
 
 const HOUSEHOLD_COLORS = ['#4A7C3A', '#0F9D6E', '#C25A3C', '#7FB0C4', '#E8A838', '#5DB8C4', '#B85AAB'];
 const AVATAR_EMOJIS = ['🥑', '🦊', '🐱', '🐶', '🐻', '🐼', '🦁', '🐯', '🐸', '🐵', '🦄', '🐝', '🍓', '🍑', '🥕', '🥬', '🍕', '🍔', '☕', '🌮', '🌶️', '🍳', '🍰', '🧁'];
@@ -23,6 +24,7 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
   const [me, setMe] = useState(cachedMe || null);
   const [household, setHousehold] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
+  useBackClose(showInvite, () => setShowInvite(false));
   const [editingUser, setEditingUser] = useState(false);
   const [editingHousehold, setEditingHousehold] = useState(false);
 

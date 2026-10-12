@@ -5,6 +5,7 @@ import LFIcon from '../icons/LFIcon.jsx';
 import ExpenseEditor from './ExpenseEditor.jsx';
 import { localISODate } from '../util/date.js';
 import { expenseLines } from '../util/expenseLines.js';
+import { useBackClose } from '../util/nav.js';
 
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
@@ -17,6 +18,7 @@ export default function ExpenseCalendar({ expenses, itemsByExpense = {}, hid, on
   });
   const [selectedDate, setSelectedDate] = useState(null);
   const [editor, setEditor] = useState(null); // { expense?: ..., defaultDate? }
+  useBackClose(!!editor, () => setEditor(null));
 
   // Mapa: 'YYYY-MM-DD' -> [expenses]
   const byDate = useMemo(() => {

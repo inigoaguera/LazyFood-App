@@ -10,6 +10,7 @@ import { syncHousehold } from '../api/sync.js';
 import { toast } from '../components/base.jsx';
 import { RecipeThumb } from '../data/recipeThumbs.jsx';
 import { inventoryForPrompt } from '../util/aiInventory.js';
+import { useBackClose } from '../util/nav.js';
 
 const WELCOME = { role: 'ai', text: '¡Hola! Cuéntame qué te apetece y te propongo recetas con lo que tienes en casa. Pídeme rápido, ligero, dulce, sin cocinar… lo que sea.' };
 
@@ -304,6 +305,7 @@ const AISuggestionCard = ({ recipe, hid, matchExisting, onOpenRecipe, onClose })
   const { pal } = useLF();
   const [showPreview, setShowPreview] = useState(false);
   const [saving, setSaving] = useState(false);
+  useBackClose(showPreview, () => setShowPreview(false));
 
   const handleView = () => {
     const m = matchExisting && matchExisting(recipe.name);

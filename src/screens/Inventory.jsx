@@ -8,6 +8,7 @@ import LFIcon from '../icons/LFIcon.jsx';
 import { patch as resourcePatch, create as resourceCreate, remove as resourceRemove } from '../api/resources.js';
 import { syncHousehold } from '../api/sync.js';
 import { expiryStatus, compareByExpiry, DAY_MS } from '../util/expires.js';
+import { useBackClose } from '../util/nav.js';
 
 // Detecta si un item está agotado (qty=0 o fill=0)
 const isEmpty = (it) => {
@@ -25,6 +26,9 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
   const [emptySheet, setEmptySheet] = useState(null); // item con qty=0
   const [movingItem, setMovingItem] = useState(null); // item que se va a mover
   const sort = 'expires';
+
+  useBackClose(!!emptySheet, () => setEmptySheet(null));
+  useBackClose(!!movingItem, () => setMovingItem(null));
 
   const items = useLiveQuery(
     () => hid ? db.items.where({ householdId: hid }).toArray() : Promise.resolve([]),

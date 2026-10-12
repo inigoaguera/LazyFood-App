@@ -8,6 +8,7 @@ import ExpenseEditor from './ExpenseEditor.jsx';
 import { localISODate } from '../util/date.js';
 import { useCategories } from '../util/categories.js';
 import { expenseLines } from '../util/expenseLines.js';
+import { useBackClose } from '../util/nav.js';
 
 // Categorías virtuales para el desglose cuando un item no tiene cat o falta info.
 const FALLBACK_CATS = {
@@ -44,6 +45,8 @@ export default function Expenses({ onBack }) {
   const [breakdown, setBreakdown] = useState('category');
   const [showCalendar, setShowCalendar] = useState(false);
   const [editor, setEditor] = useState(null);
+  useBackClose(showCalendar, () => setShowCalendar(false));
+  useBackClose(!!editor, () => setEditor(null));
 
   const expenses = useLiveQuery(
     () => hid ? db.expenses.where({ householdId: hid }).toArray() : Promise.resolve([]),

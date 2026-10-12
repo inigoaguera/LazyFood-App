@@ -7,11 +7,13 @@ import { LF_SHADOWS } from '../tokens/palettes.js';
 import LFIcon from '../icons/LFIcon.jsx';
 import { expiryStatus, isExpiringSoon, compareByExpiry } from '../util/expires.js';
 import UseIngredient from './UseIngredient.jsx';
+import { useBackClose } from '../util/nav.js';
 
 export default function Home({ onOpenLocation, onNav, onOpenRecipe, onOpenChat }) {
   const { pal, fonts, me, currentHouseholdMeta } = useLF();
   const hid = currentHouseholdMeta?.id;
   const [useItem, setUseItem] = useState(null);
+  useBackClose(!!useItem, () => setUseItem(null));
 
   const items = useLiveQuery(
     () => hid ? db.items.where({ householdId: hid }).toArray() : Promise.resolve([]),
