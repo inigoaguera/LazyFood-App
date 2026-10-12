@@ -10,18 +10,24 @@ import {
 } from '../api/session.js';
 import { bulkImport, create as resourceCreate, remove as resourceRemove } from '../api/resources.js';
 import { syncHousehold } from '../api/sync.js';
+import { cacheClearHousehold } from '../db.js';
 import { buildSamplePayload } from '../data/seed.js';
 import { useCategories } from '../util/categories.js';
 import InviteShare from './InviteShare.jsx';
+import { useBackClose } from '../util/nav.js';
+import { LANGS, errMsg } from '../i18n/index.js';
+import { roleLabel } from '../i18n/labels.js';
+import { changeLang } from '../i18n/switch.js';
 
 const HOUSEHOLD_COLORS = ['#4A7C3A', '#0F9D6E', '#C25A3C', '#7FB0C4', '#E8A838', '#5DB8C4', '#B85AAB'];
 const AVATAR_EMOJIS = ['🥑', '🦊', '🐱', '🐶', '🐻', '🐼', '🦁', '🐯', '🐸', '🐵', '🦄', '🐝', '🍓', '🍑', '🥕', '🥬', '🍕', '🍔', '☕', '🌮', '🌶️', '🍳', '🍰', '🧁'];
 
 export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
-  const { pal, fonts, currentHousehold, me: cachedMe } = useLF();
+  const { pal, fonts, currentHousehold, me: cachedMe, lang, t } = useLF();
   const [me, setMe] = useState(cachedMe || null);
   const [household, setHousehold] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
+  useBackClose(showInvite, () => setShowInvite(false));
   const [editingUser, setEditingUser] = useState(false);
   const [editingHousehold, setEditingHousehold] = useState(false);
 
@@ -31,59 +37,78 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
     if (currentHousehold) {
       getHousehold(currentHousehold)
         .then((h) => { if (!cancelled) setHousehold(h); })
-        .catch((e) => { if (!cancelled) toast(e?.message || 'Error', 'error'); });
+        .catch((e) => { if (!cancelled) toast(errMsg(e), 'error'); });
     }
     return () => { cancelled = true; };
   }, [currentHousehold]);
 
+  // Sólo se manda la preferencia que cambia: el Worker fusiona prefs. Mandar
+  // el objeto entero desde esta copia local (que no se entera de un cambio de
+  // idioma) devolvía la cuenta al idioma anterior al elegir paleta o letra.
   const updatePref = async (k, v) => {
-    const next = { ...(me?.prefs || {}), [k]: v };
-    await patchMe({ prefs: next });
-    setMe((cur) => cur ? { ...cur, prefs: next } : cur);
+    try {
+      const fresh = await patchMe({ prefs: { [k]: v } });
+      setMe(fresh || ((cur) => (cur ? { ...cur, prefs: { ...(cur.prefs || {}), [k]: v } } : cur)));
+    } catch (e) { toast(errMsg(e), 'error'); }
+  };
+
+  const handleLang = async (k) => {
+    if (k === lang) return;
+    // Sin conexión también vale: se aplica ya y App lo sube a la cuenta luego.
+    try { await changeLang(k); } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const handleLeave = async () => {
-    if (!confirm(`¿Salir de "${household.name}"? Perderás el acceso a esta casa.`)) return;
+    if (!confirm(t('profile.confirm.leave', { name: household.name }))) return;
     try {
       await leaveOrKick(household.id, me.id);
-      toast('Saliste de la casa');
+      await cacheClearHousehold(household.id);
+      toast(t('profile.left'));
       onSwitchHousehold?.();
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const handleKick = async (target) => {
-    if (!confirm(`¿Expulsar a ${target.name || target.email} de "${household.name}"?`)) return;
+    if (!confirm(t('profile.confirm.kick', { who: target.name || target.email, name: household.name }))) return;
     try {
       await leaveOrKick(household.id, target.id);
       const refreshed = await getHousehold(household.id);
       setHousehold(refreshed);
-      toast(`${target.name || target.email} expulsado`);
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+      toast(t('profile.kicked', { who: target.name || target.email }));
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const handleImportSample = async () => {
     if (!household) return;
-    if (!confirm(`¿Importar 23 items + 11 recetas + 6 cosas de la lista a "${household.name}"?\n\nSe AÑADEN a lo que ya tengas (no reemplaza). Si quieres empezar limpio, borra primero los items existentes.`)) return;
+    // Se construye antes de preguntar para contar lo que de verdad se va a importar.
+    const payload = buildSamplePayload(lang);
+    if (!confirm(t('profile.import.confirm', {
+      name: household.name,
+      items: t('common.items', { n: payload.items.length }),
+      recipes: t('profile.import.recipes', { n: payload.recipes.length }),
+      shopping: t('profile.import.shopping', { n: payload.shopping.length }),
+    }))) return;
     try {
-      const res = await bulkImport(household.id, buildSamplePayload());
+      const res = await bulkImport(household.id, payload);
       await syncHousehold(household.id, { full: true });
       const total = Object.values(res?.counts || {}).reduce((a, b) => a + b, 0);
-      toast(`Importados ${total} elementos 🎉`);
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+      toast(t('profile.import.done', { n: total }));
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const handleDeleteHousehold = async () => {
-    if (!confirm(`¿Borrar "${household.name}" PARA SIEMPRE? Se perderán todos los items, recetas, lista, gastos y menú. Esta acción no se puede deshacer.`)) return;
-    if (!confirm('Última oportunidad. ¿Seguro?')) return;
+    if (!confirm(t('profile.confirm.deleteHouse', { name: household.name }))) return;
+    if (!confirm(t('profile.confirm.deleteHouseLast'))) return;
     try {
       await deleteHousehold(household.id);
-      toast('Casa borrada');
+      await cacheClearHousehold(household.id);
+      toast(t('profile.houseDeleted'));
       onSwitchHousehold?.();
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const handleLogout = async () => {
-    if (!confirm('¿Cerrar sesión? Tendrás que volver a meter tu email.')) return;
+    if (!confirm(t('profile.confirm.logout'))) return;
     await logout();
     onLogout?.();
   };
@@ -94,11 +119,11 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
 
   return (
     <Screen>
-      <Header big title="Perfil" left={<IconBtn icon="chevronLeft" onClick={onBack} />} />
+      <Header big title={t('profile.title')} left={<IconBtn icon="chevronLeft" onClick={onBack} />} />
       <div style={{ padding: '0 20px' }}>
 
         {/* ─── Mi cuenta ──────────────────────────────────────── */}
-        <SectionTitle>Mi cuenta</SectionTitle>
+        <SectionTitle>{t('profile.section.account')}</SectionTitle>
         <Card style={{ padding: 18, marginBottom: 16 }}>
           {!editingUser ? (
             <UserSummary me={me} avatarFallback={initial} pal={pal} fonts={fonts}
@@ -110,8 +135,8 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
                   await patchMe(patch);
                   const m = await fetchMe(); setMe(m);
                   setEditingUser(false);
-                  toast('Cambios guardados');
-                } catch (e) { toast(e?.message || 'Error', 'error'); }
+                  toast(t('common.changesSaved'));
+                } catch (e) { toast(errMsg(e), 'error'); }
               }}
               onCancel={() => setEditingUser(false)} />
           )}
@@ -120,7 +145,7 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
         {/* ─── Esta casa ──────────────────────────────────────── */}
         {household && (
           <>
-            <SectionTitle>Esta casa</SectionTitle>
+            <SectionTitle>{t('profile.section.house')}</SectionTitle>
             <Card style={{ padding: 16, marginBottom: 12 }}>
               {!editingHousehold ? (
                 <HouseholdSummary household={household} pal={pal} fonts={fonts}
@@ -134,8 +159,8 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
                       setHousehold(refreshed);
                       await fetchMe();
                       setEditingHousehold(false);
-                      toast('Casa actualizada');
-                    } catch (e) { toast(e?.message || 'Error', 'error'); }
+                      toast(t('profile.houseUpdated'));
+                    } catch (e) { toast(errMsg(e), 'error'); }
                   }}
                   onCancel={() => setEditingHousehold(false)} />
               )}
@@ -144,7 +169,7 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
             {/* Miembros */}
             <Card style={{ padding: 14, marginBottom: 12 }}>
               <div style={{ fontSize: 11, color: pal.inkSoft, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>
-                Miembros ({household.members?.length || 0})
+                {t('profile.members', { n: household.members?.length || 0 })}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {(household.members || []).map((m, i, arr) => (
@@ -160,17 +185,17 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
                     }}>{m.avatar || (m.name || m.email || '?').charAt(0).toUpperCase()}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: pal.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {m.name || m.email}{m.id === me?.id && ' (tú)'}
+                        {m.name || m.email}{m.id === me?.id && ` ${t('profile.you')}`}
                       </div>
                       <div style={{ fontSize: 11, color: pal.inkFaint }}>
-                        {m.role === 'owner' ? '👑 Propietario' : 'Miembro'}
+                        {m.role === 'owner' ? `👑 ${roleLabel('owner')}` : roleLabel('member')}
                       </div>
                     </div>
                     {isOwner && m.id !== me?.id && (
                       <button onClick={() => handleKick(m)} style={{
                         background: 'transparent', border: 'none', color: pal.danger,
                         fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: '4px 8px',
-                      }}>Expulsar</button>
+                      }}>{t('profile.kick')}</button>
                     )}
                   </div>
                 ))}
@@ -180,10 +205,10 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
             {/* Acciones de casa */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               <Button tone="green" size="md" icon="plus" fullWidth onClick={() => setShowInvite(true)}>
-                Invitar
+                {t('profile.invite')}
               </Button>
               <Button tone="soft" size="md" fullWidth onClick={onSwitchHousehold}>
-                Cambiar casa
+                {t('profile.switchHouse')}
               </Button>
             </div>
 
@@ -194,7 +219,7 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}>
               <span>🌱</span>
-              <span>Importar datos de prueba</span>
+              <span>{t('profile.importSample')}</span>
             </button>
 
             {(household.members?.length || 0) > 1 && (
@@ -203,7 +228,7 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
                 background: 'transparent', border: `0.5px solid ${pal.line}`, borderRadius: 12,
                 color: pal.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer',
               }}>
-                Salir de "{household.name}"
+                {t('profile.leave', { name: household.name })}
               </button>
             )}
 
@@ -213,7 +238,7 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
                 background: pal.dangerSoft, border: 'none', borderRadius: 12,
                 color: pal.danger, fontSize: 13, fontWeight: 700, cursor: 'pointer',
               }}>
-                🗑 Borrar casa para siempre
+                {t('profile.deleteHouse')}
               </button>
             )}
           </>
@@ -222,15 +247,37 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
         {/* ─── Categorías de la casa ──────────────────────────── */}
         {household && (
           <>
-            <SectionTitle>Categorías de la casa</SectionTitle>
+            <SectionTitle>{t('profile.section.categories')}</SectionTitle>
             <CustomCategoriesSection hid={household.id} />
           </>
         )}
 
-        {/* ─── Tema ───────────────────────────────────────────── */}
-        <SectionTitle>Tema (tuyo, no compartido)</SectionTitle>
+        {/* ─── Idioma ─────────────────────────────────────────── */}
+        <SectionTitle>{t('common.lang.title')}</SectionTitle>
         <Card style={{ padding: 14, marginBottom: 12 }}>
-          <Label>Paleta</Label>
+          <div style={{ display: 'flex', gap: 10 }}>
+            {Object.entries(LANGS).map(([k, v]) => (
+              <button key={k} onClick={() => handleLang(k)} style={{
+                flex: 1, padding: '12px 8px', borderRadius: 12, cursor: 'pointer',
+                background: pal.bg,
+                border: lang === k ? `2px solid ${pal.ink}` : `0.5px solid ${pal.line}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                fontSize: 14, fontWeight: 700, color: pal.ink,
+              }}>
+                <span style={{ fontSize: 18 }}>{v.flag}</span>
+                <span>{v.label}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: pal.inkSoft, marginTop: 10, lineHeight: 1.4 }}>
+            {t('common.lang.hint')}
+          </div>
+        </Card>
+
+        {/* ─── Tema ───────────────────────────────────────────── */}
+        <SectionTitle>{t('profile.section.theme')}</SectionTitle>
+        <Card style={{ padding: 14, marginBottom: 12 }}>
+          <Label>{t('profile.theme.palette')}</Label>
           <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
             {Object.entries(LF_PALETTES).map(([k, v]) => (
               <button key={k} onClick={() => updatePref('palette', k)} style={{
@@ -249,7 +296,7 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
           </div>
         </Card>
         <Card style={{ padding: 14, marginBottom: 18 }}>
-          <Label>Tipografía</Label>
+          <Label>{t('profile.theme.font')}</Label>
           <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             {Object.entries(LF_FONTS).map(([k, v]) => (
               <button key={k} onClick={() => updatePref('font', k)} style={{
@@ -263,7 +310,7 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
         </Card>
 
         {/* ─── Sesión ─────────────────────────────────────────── */}
-        <SectionTitle>Sesión</SectionTitle>
+        <SectionTitle>{t('profile.section.session')}</SectionTitle>
         <button onClick={handleLogout} style={{
           width: '100%', padding: 14, background: pal.surface,
           border: `0.5px solid ${pal.line}`, borderRadius: 14,
@@ -271,7 +318,7 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
         }}>
           <LFIcon name="arrowLeft" size={16} color={pal.danger} />
-          Cerrar sesión
+          {t('profile.logout')}
         </button>
         <div style={{ height: 30 }}/>
       </div>
@@ -286,7 +333,9 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
 
 // ─── Componentes auxiliares ──────────────────────────────────────────
 
-const UserSummary = ({ me, avatarFallback, pal, fonts, onEdit }) => (
+const UserSummary = ({ me, avatarFallback, pal, fonts, onEdit }) => {
+  const { t } = useLF();
+  return (
   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
     <div style={{
       width: 64, height: 64, borderRadius: 32,
@@ -296,7 +345,7 @@ const UserSummary = ({ me, avatarFallback, pal, fonts, onEdit }) => (
     }}>{me?.avatar || avatarFallback}</div>
     <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ fontFamily: fonts.display, fontWeight: 700, fontSize: 18, color: pal.ink }}>
-        {me?.name || 'Sin nombre'}
+        {me?.name || t('common.noName')}
       </div>
       <div style={{ fontSize: 12, color: pal.inkSoft, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {me?.email}
@@ -304,9 +353,11 @@ const UserSummary = ({ me, avatarFallback, pal, fonts, onEdit }) => (
     </div>
     <IconBtn icon="pencil" tone="soft" onClick={onEdit} />
   </div>
-);
+  );
+};
 
 const UserEditor = ({ me, pal, fonts, onSave, onCancel }) => {
+  const { t } = useLF();
   const [name, setName] = useState(me?.name || '');
   const [avatar, setAvatar] = useState(me?.avatar || '');
   return (
@@ -319,9 +370,9 @@ const UserEditor = ({ me, pal, fonts, onSave, onCancel }) => {
           color: '#fff', fontFamily: fonts.display, fontSize: avatar ? 32 : 24, fontWeight: 800, flexShrink: 0,
         }}>{avatar || (name || me?.email || '?').charAt(0).toUpperCase()}</div>
         <div style={{ flex: 1 }}>
-          <Label>Tu nombre</Label>
+          <Label>{t('profile.user.name')}</Label>
           <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
-            placeholder="Iñigo"
+            placeholder={t('profile.user.namePlaceholder')}
             style={{
               width: '100%', padding: '10px 12px', fontSize: 15,
               background: pal.bg, border: `1px solid ${pal.line}`,
@@ -329,7 +380,7 @@ const UserEditor = ({ me, pal, fonts, onSave, onCancel }) => {
             }} />
         </div>
       </div>
-      <Label>Avatar</Label>
+      <Label>{t('profile.user.avatar')}</Label>
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6, marginTop: 8,
       }}>
@@ -348,15 +399,17 @@ const UserEditor = ({ me, pal, fonts, onSave, onCancel }) => {
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <Button tone="green" size="md" fullWidth onClick={() => onSave({ name: name.trim(), avatar })}>
-          Guardar
+          {t('common.save')}
         </Button>
-        <Button tone="soft" size="md" fullWidth onClick={onCancel}>Cancelar</Button>
+        <Button tone="soft" size="md" fullWidth onClick={onCancel}>{t('common.cancel')}</Button>
       </div>
     </div>
   );
 };
 
-const HouseholdSummary = ({ household, pal, fonts, canEdit, onEdit }) => (
+const HouseholdSummary = ({ household, pal, fonts, canEdit, onEdit }) => {
+  const { t } = useLF();
+  return (
   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
     <div style={{
       width: 44, height: 44, borderRadius: 22, flexShrink: 0,
@@ -369,14 +422,16 @@ const HouseholdSummary = ({ household, pal, fonts, canEdit, onEdit }) => (
         {household.name}
       </div>
       <div style={{ fontSize: 11, color: pal.inkSoft }}>
-        Presupuesto: {household.budget ? `${household.budget}€/mes` : 'sin definir'}
+        {household.budget ? t('profile.budget.set', { budget: household.budget }) : t('profile.budget.unset')}
       </div>
     </div>
     {canEdit && <IconBtn icon="pencil" tone="soft" onClick={onEdit} />}
   </div>
-);
+  );
+};
 
 const HouseholdEditor = ({ household, isOwner, pal, fonts, onSave, onCancel }) => {
+  const { t } = useLF();
   const [name, setName] = useState(household.name || '');
   const [color, setColor] = useState(household.color || HOUSEHOLD_COLORS[0]);
   const [budget, setBudget] = useState(household.budget != null ? String(household.budget) : '');
@@ -396,7 +451,7 @@ const HouseholdEditor = ({ household, isOwner, pal, fonts, onSave, onCancel }) =
 
   return (
     <div>
-      <Label>{isOwner ? 'Nombre de la casa' : 'Nombre (sólo el owner puede cambiarlo)'}</Label>
+      <Label>{isOwner ? t('profile.houseEditor.nameOwner') : t('profile.houseEditor.nameMember')}</Label>
       <input value={name} onChange={(e) => setName(e.target.value)}
         disabled={!isOwner}
         style={{
@@ -408,7 +463,7 @@ const HouseholdEditor = ({ household, isOwner, pal, fonts, onSave, onCancel }) =
 
       {isOwner && (
         <div style={{ marginTop: 14 }}>
-          <Label>Color</Label>
+          <Label>{t('profile.houseEditor.color')}</Label>
           <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             {HOUSEHOLD_COLORS.map((c) => (
               <button key={c} onClick={() => setColor(c)} style={{
@@ -423,7 +478,7 @@ const HouseholdEditor = ({ household, isOwner, pal, fonts, onSave, onCancel }) =
       )}
 
       <div style={{ marginTop: 14 }}>
-        <Label>Presupuesto mensual (€)</Label>
+        <Label>{t('profile.houseEditor.budget')}</Label>
         <input type="number" inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)}
           placeholder="400"
           style={{
@@ -434,8 +489,8 @@ const HouseholdEditor = ({ household, isOwner, pal, fonts, onSave, onCancel }) =
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-        <Button tone="green" size="md" fullWidth onClick={save}>Guardar</Button>
-        <Button tone="soft" size="md" fullWidth onClick={onCancel}>Cancelar</Button>
+        <Button tone="green" size="md" fullWidth onClick={save}>{t('common.save')}</Button>
+        <Button tone="soft" size="md" fullWidth onClick={onCancel}>{t('common.cancel')}</Button>
       </div>
     </div>
   );
@@ -449,7 +504,7 @@ const SectionTitle = ({ children }) => {
 const CAT_COLORS = ['#E6D5A8','#A8C9A0','#E8B5B0','#D4A5A5','#A8C4DB','#E8CCA0','#C4B8A5','#E8B5A8','#D4B58A','#B0C7D4','#E8BB8A','#BFE3EA','#C5DCA0','#E8C8C0','#D080A8'];
 
 const CustomCategoriesSection = ({ hid }) => {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const all = useCategories(hid);
   // Sólo nos interesan las custom (las default no tienen flag custom)
   const customs = all.filter((c) => c.custom);
@@ -465,25 +520,24 @@ const CustomCategoriesSection = ({ hid }) => {
         name: name.trim(), color, emoji: emoji.trim() || null,
       });
       await syncHousehold(hid);
-      toast(`Categoría "${name}" creada`);
+      toast(t('profile.categories.created', { name }));
       setName(''); setEmoji(''); setColor(CAT_COLORS[0]); setAdding(false);
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const remove = async (cat) => {
-    if (!confirm(`¿Borrar la categoría "${cat.label}"? Los items que la usan se quedan sin categoría.`)) return;
+    if (!confirm(t('profile.categories.confirmDelete', { name: cat.label }))) return;
     try {
       await resourceRemove('categories', hid, cat.id);
       await syncHousehold(hid);
-      toast('Categoría eliminada');
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+      toast(t('profile.categories.deleted'));
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   return (
     <Card style={{ padding: 14, marginBottom: 12 }}>
       <div style={{ fontSize: 11, color: pal.inkSoft, marginBottom: 10, lineHeight: 1.4 }}>
-        Las 12 categorías por defecto están siempre disponibles. Aquí puedes añadir
-        las tuyas (postres, bebés, salsas caseras…) y las verán todos los miembros.
+        {t('profile.categories.hint')}
       </div>
       {customs.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
@@ -499,7 +553,7 @@ const CustomCategoriesSection = ({ hid }) => {
               <button onClick={() => remove(c)} style={{
                 background: 'transparent', border: 'none', color: pal.danger,
                 fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: '4px 8px',
-              }}>Eliminar</button>
+              }}>{t('common.remove')}</button>
             </div>
           ))}
         </div>
@@ -509,25 +563,25 @@ const CustomCategoriesSection = ({ hid }) => {
           width: '100%', padding: 10, borderRadius: 10,
           background: pal.primarySoft, color: pal.primary, border: 'none',
           fontSize: 12, fontWeight: 700, cursor: 'pointer',
-        }}>+ Añadir categoría</button>
+        }}>{t('profile.categories.add')}</button>
       ) : (
         <div style={{ padding: 10, background: pal.bg, borderRadius: 10, border: `0.5px solid ${pal.line}` }}>
           <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') create(); if (e.key === 'Escape') setAdding(false); }}
-            placeholder="Nombre (postres, bebés…)"
+            placeholder={t('profile.categories.namePlaceholder')}
             style={{
               width: '100%', padding: 10, fontSize: 14, marginBottom: 10,
               background: pal.surface, border: `0.5px solid ${pal.line}`,
               borderRadius: 8, color: pal.ink, outline: 'none',
             }} />
           <input value={emoji} onChange={(e) => setEmoji(e.target.value)}
-            placeholder="Emoji (opcional)" maxLength={3}
+            placeholder={t('profile.categories.emojiPlaceholder')} maxLength={3}
             style={{
               width: 80, padding: 10, fontSize: 18, marginBottom: 10,
               background: pal.surface, border: `0.5px solid ${pal.line}`,
               borderRadius: 8, color: pal.ink, outline: 'none', textAlign: 'center',
             }} />
-          <div style={{ fontSize: 10, fontWeight: 700, color: pal.inkSoft, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 6 }}>Color</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: pal.inkSoft, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 6 }}>{t('profile.categories.color')}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
             {CAT_COLORS.map((c) => (
               <button key={c} onClick={() => setColor(c)} style={{
@@ -542,12 +596,12 @@ const CustomCategoriesSection = ({ hid }) => {
               flex: 1, padding: 10, background: pal.primary, color: '#fff',
               border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700,
               cursor: name.trim() ? 'pointer' : 'default', opacity: name.trim() ? 1 : 0.5,
-            }}>Crear</button>
+            }}>{t('common.create')}</button>
             <button onClick={() => { setAdding(false); setName(''); setEmoji(''); }} style={{
               flex: 1, padding: 10, background: 'transparent', color: pal.inkSoft,
               border: `0.5px solid ${pal.line}`, borderRadius: 10, fontSize: 13, fontWeight: 600,
               cursor: 'pointer',
-            }}>Cancelar</button>
+            }}>{t('common.cancel')}</button>
           </div>
         </div>
       )}

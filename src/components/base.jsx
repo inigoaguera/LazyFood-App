@@ -2,6 +2,8 @@ import React, { useRef, useState } from 'react';
 import { useLF, haptic } from './ctx.js';
 import { LF_SHADOWS } from '../tokens/palettes.js';
 import LFIcon from '../icons/LFIcon.jsx';
+import { t } from '../i18n/index.js';
+import { unitLabel, unitKey } from '../i18n/labels.js';
 
 // ─── Screen ─────────────────────────────────────────────────────────────
 export const Screen = ({ children, scrollable = true, padBottom = 100, style }) => (
@@ -128,10 +130,10 @@ export const Button = ({ children, onClick, tone = 'primary', size = 'md', icon,
 export const BottomNav = ({ active, onNav, onScan }) => {
   const { pal } = useLF();
   const tabs = [
-    { id: 'home',     label: 'Inicio',    icon: 'home' },
-    { id: 'list',     label: 'Todo',      icon: 'list' },
-    { id: 'recipes',  label: 'Recetas',   icon: 'chef', dot: true },
-    { id: 'expenses', label: 'Gastos',    icon: 'chart' },
+    { id: 'home',     label: t('common.nav.home'),    icon: 'home' },
+    { id: 'list',     label: t('common.nav.list'),      icon: 'list' },
+    { id: 'recipes',  label: t('common.nav.recipes'),   icon: 'chef', dot: true },
+    { id: 'expenses', label: t('common.nav.expenses'),    icon: 'chart' },
   ];
   return (
     <div style={{
@@ -259,6 +261,28 @@ export const SwipeRow = ({ children, actions, height }) => {
 export const Divider = () => {
   const { pal } = useLF();
   return <div style={{ height: 0.5, background: pal.line, margin: '4px 0' }}/>;
+};
+
+// ─── UnitInput ──────────────────────────────────────────────────────────
+// Campo de texto libre para una unidad que se GUARDA como clave (uds, latas…)
+// pero se enseña con su etiqueta (pcs, tins…). Lo que escribes se ve tal cual
+// mientras escribes; al padre le llega siempre la clave ("tins" → "latas",
+// una unidad desconocida tal cual), y al salir del campo se vuelve a pintar la
+// etiqueta. Convertir el texto en cada tecla se comía espacios y cambiaba
+// letras a medio escribir ("l" → "L", "ud…" → "pc…").
+export const UnitInput = ({ value, onChange, placeholder, style }) => {
+  const { lang } = useLF();
+  const [text, setText] = useState(() => unitLabel(value || ''));
+  const [focused, setFocused] = useState(false);
+  React.useEffect(() => {
+    if (!focused) setText(unitLabel(value || ''));
+  }, [value, focused, lang]);
+  return (
+    <input value={text} placeholder={placeholder} style={style}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={(e) => { setText(e.target.value); onChange(unitKey(e.target.value.trim())); }} />
+  );
 };
 
 // ─── Toast (lightweight) ────────────────────────────────────────────────

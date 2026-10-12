@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { t, fmtDateTime, errMsg, getLang } from '../i18n/index.js';
+import { groupLabel } from '../i18n/labels.js';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getSetting, setSetting, RECIPE_USES_EXPIRING_BY_NAME } from '../db.js';
 import { useLF } from '../components/ctx.js';
@@ -10,12 +12,17 @@ import { RECIPE_THUMBS, RecipeThumb } from '../data/recipeThumbs.jsx';
 import RecipeEditor from './RecipeEditor.jsx';
 import { recipeStockStatus, stockBadge } from '../util/stock.js';
 import RecipeFilters, { applyFilters, countActive } from './RecipeFilters.jsx';
+import { inventoryForPrompt, pantrySignature } from '../util/aiInventory.js';
+import { useBackClose } from '../util/nav.js';
 
 // Re-exports para mantener compat con código que ya importa de aquí.
 export { RECIPE_THUMBS, RecipeThumb };
 
+// Cuántas recetas pide el hub a la IA en total (5 + 5 + 5). Ver suggestRecipesForHub.
+const HUB_IDEAS = 15;
+
 export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
-  const { pal, currentHouseholdMeta } = useLF();
+  const { pal, currentHouseholdMeta, lang } = useLF();
   const hid = currentHouseholdMeta?.id;
   const recipes = useLiveQuery(
     () => hid ? db.recipes.where({ householdId: hid }).toArray() : Promise.resolve([]),
@@ -31,7 +38,12 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
   );
   const itemsCount = items.length;
 
-  const yours = recipes.filter((r) => r.group === 'yours');
+  // Todas las recetas guardadas, sea cual sea su grupo. El editor deja elegir
+  // entre yours/effortless/chef/oneOff, pero las otras tres secciones del hub
+  // son sugerencias de IA en vivo, no recetas guardadas: filtrar por
+  // group === 'yours' hacía desaparecer de la interfaz las que guardabas con
+  // otro grupo (seguían en la base y sólo salían en el selector del menú).
+  const yours = recipes;
 
   // Mapa nombre→ingredientes para calcular el indicador de stock por card
   const detailsByName = React.useMemo(() => {
@@ -46,48 +58,83 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
   }, [detailsByName, items]);
 
   // ─── Cache de sugerencias IA ──────────────────────────────────────
-  const [aiData, setAiData] = useState(null); // { effortless, chef, oneOff }
+  const [aiData, setAiData] = useState(null); // { effortless, chef, oneOff, lang }
+  // Si el idioma cambia con el hub abierto (p.ej. desde otro móvil), las
+  // sugerencias en pantalla son del idioma anterior: fuera, para que un
+  // reemplazo no las guarde mezcladas con la etiqueta del idioma nuevo.
+  useEffect(() => {
+    if (aiData && (aiData.lang || 'es') !== lang) setAiData(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang]);
   const [aiBusy, setAiBusy] = useState(false); // true durante regenerar TODO
   const [replacingSlots, setReplacingSlots] = useState(() => new Set()); // "effortless:2" en marcha
+
+  // Recetas descartadas con la ×. Se guardan junto a la firma de la despensa:
+  // mientras el conjunto de productos no cambie no vuelven a proponerse, y en
+  // cuanto entra compra nueva se empieza de cero (con otra despensa ese mismo
+  // plato puede apetecer).
+  const [rechazadas, setRechazadas] = useState([]);
 
   useEffect(() => {
     if (!hid) return;
     let cancelled = false;
     (async () => {
       const cached = await getSetting(`aiRecipes:${hid}`);
-      if (cached && !cancelled) setAiData(cached);
+      // Las sugerencias son texto de la IA en un idioma: si no es el actual
+      // (cachés de antes de i18n eran castellano) no se enseñan.
+      if (cached && !cancelled && (cached.lang || 'es') === getLang()) setAiData(cached);
+      const desc = await getSetting(`descartadas:${hid}`);
+      if (!cancelled && desc?.firma && desc.firma === pantrySignature(items)) {
+        setRechazadas(desc.recetas || []);
+      }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hid]);
+
+  // Lo que no queremos que vuelva: lo que está en pantalla ahora + lo descartado.
+  const construirAvoid = React.useCallback((data) => {
+    const enPantalla = [
+      ...(data?.effortless || []), ...(data?.chef || []), ...(data?.oneOff || []),
+    ].filter((r) => r?.name).map((r) => ({ name: r.name, uses: r.uses }));
+    const vistas = new Set(enPantalla.map((r) => r.name.toLowerCase()));
+    return [...enPantalla, ...rechazadas.filter((r) => !vistas.has((r.name || '').toLowerCase()))];
+  }, [rechazadas]);
+
+  const recordarDescarte = async (receta) => {
+    if (!receta?.name) return;
+    const siguiente = [...rechazadas, { name: receta.name, uses: receta.uses }].slice(-40);
+    setRechazadas(siguiente);
+    await setSetting(`descartadas:${hid}`, { firma: pantrySignature(items), recetas: siguiente });
+  };
 
   // Reemplaza una receta de IA por otra distinta. La IA recibe la lista de
   // todas las que ya están mostrándose para no repetir.
   const replaceSuggestion = async (section, indexInSection) => {
     if (!hid || !aiData) return;
-    if (!proxyConfigured()) { toast('Configura la API', 'error'); return; }
+    if (!proxyConfigured()) { toast(t('recipes.hub.configureApi'), 'error'); return; }
     const slotKey = `${section}:${indexInSection}`;
+    const reqLang = getLang();
     // Marcar el slot como "dándole otra vuelta..."
     setReplacingSlots((prev) => { const n = new Set(prev); n.add(slotKey); return n; });
-    const inv = items.map((it) => {
-      const qty = it.type === 'continuous' ? `${it.fill}% (${it.unit})` : `${it.qty} ${it.unit}`;
-      const exp = it.expires != null && it.expires <= 5 ? ` ⚠ caduca pronto` : '';
-      return `- ${it.name}: ${qty}${exp}`;
-    }).join('\n');
-    const avoid = [
-      ...(aiData.effortless || []).map((r) => r.name),
-      ...(aiData.chef || []).map((r) => r.name),
-      ...(aiData.oneOff || []).map((r) => r.name),
-    ].filter(Boolean);
+    const inv = inventoryForPrompt(items);
+    const descartada = (aiData[section] || [])[indexInSection];
+    const avoid = construirAvoid(aiData);
     try {
       const fresh = await suggestReplacementRecipe({ inventory: inv, section, avoid });
-      if (!fresh?.name) throw new Error('No vino nada');
+      // Si cambiaste de idioma mientras pensaba, la respuesta ya no vale.
+      if (getLang() !== reqLang) return;
+      if (!fresh?.name) throw new Error(t('recipes.hub.nothingCame'));
       fresh.effort = Math.max(1, (fresh.tools || []).length);
       const next = { ...aiData, [section]: [...(aiData[section] || [])] };
       next[section][indexInSection] = fresh;
       setAiData(next);
-      await setSetting(`aiRecipes:${hid}`, next);
+      await setSetting(`aiRecipes:${hid}`, { ...next, lang: reqLang });
+      // La × es la señal más clara de "esto no me gusta" y hasta ahora se tiraba:
+      // la receta salía de la lista y podía volver en el siguiente reemplazo.
+      await recordarDescarte(descartada);
     } catch (e) {
-      toast(e?.message || 'No pude reemplazar', 'error');
+      toast(errMsg(e, 'recipes.hub.replaceFail'), 'error');
     } finally {
       setReplacingSlots((prev) => { const n = new Set(prev); n.delete(slotKey); return n; });
     }
@@ -96,19 +143,21 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
   const inspire = async () => {
     if (!hid || !proxyConfigured()) return;
     if (!items.length) {
-      toast('Añade items o importa datos para que pueda sugerir', 'error');
+      toast(t('recipes.inspire.needItemsToast'), 'error');
       return;
     }
+    // Se captura ANTES de vaciar: es lo que hay que decirle que no repita.
+    const avoid = construirAvoid(aiData);
     // Vaciamos las sugerencias actuales y mostramos la tarjeta global de "pensando"
     setAiData(null);
     setAiBusy(true);
+    const reqLang = getLang();
     try {
-      const inv = items.map((it) => {
-        const qty = it.type === 'continuous' ? `${it.fill}% (${it.unit})` : `${it.qty} ${it.unit}`;
-        const exp = it.expires != null && it.expires <= 5 ? ` ⚠ caduca en ${it.expires}d` : '';
-        return `- ${it.name}: ${qty}${exp}`;
-      }).join('\n');
-      const result = await suggestRecipesForHub({ inventory: inv });
+      const inv = inventoryForPrompt(items);
+      // Sin esta lista, mismo inventario y mismo prompt devolvían casi las
+      // mismas quince recetas cada vez que pulsabas Inspírame.
+      const result = await suggestRecipesForHub({ inventory: inv, avoid });
+      if (getLang() !== reqLang) return;
       // Derivar effort = tools.length (mín 1) para que el icono 🍳 cuadre con la lista de instrumentos
       const enrichEffort = (arr) => (arr || []).map((r) => ({
         ...r,
@@ -119,12 +168,13 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
         chef: enrichEffort(result.chef),
         oneOff: enrichEffort(result.oneOff),
         generatedAt: Date.now(),
+        lang: reqLang,
       };
       setAiData(fresh);
       await setSetting(`aiRecipes:${hid}`, fresh);
-      toast('Sugerencias actualizadas ✨');
+      toast(t('recipes.inspire.updated'));
     } catch (e) {
-      toast(e?.message || 'No he podido inspirarte', 'error');
+      toast(errMsg(e, 'recipes.inspire.fail'), 'error');
     } finally { setAiBusy(false); }
   };
 
@@ -133,12 +183,15 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
   const [preview, setPreview] = useState(null); // recipe object IA | null
   const [filters, setFilters] = useState({});
   const [filtersOpen, setFiltersOpen] = useState(false);
+  useBackClose(!!editing, () => setEditing(null));
+  useBackClose(!!preview, () => setPreview(null));
+  useBackClose(filtersOpen, () => setFiltersOpen(false));
   const filteredYours = applyFilters(yours, filters, { stockByName: stockFor, detailsByName });
   const activeCount = countActive(filters);
 
   return (
     <Screen>
-      <Header big title="Recetas ✨" subtitle="Tus recetas + sugerencias con lo que tienes"
+      <Header big title={t('recipes.hub.title')} subtitle={t('recipes.hub.subtitle')}
         left={<IconBtn icon="chevronLeft" onClick={onBack} />}
         right={<IconBtn icon="search" tone="soft" />} />
 
@@ -151,8 +204,8 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
         }}>
           <div style={{ fontSize: 22 }}>🧠</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: pal.ink }}>Tienes {itemsCount} ingredientes</div>
-            <div style={{ fontSize: 11, color: pal.inkSoft }}>Pídeme ideas conversando</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: pal.ink }}>{t('recipes.hub.pantry', { n: itemsCount })}</div>
+            <div style={{ fontSize: 11, color: pal.inkSoft }}>{t('recipes.hub.chatHint')}</div>
           </div>
           <button onClick={onOpenChat} style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -162,26 +215,26 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
             boxShadow: LF_SHADOWS.sm,
           }}>
             <LFIcon name="sparkle" size={14} color={pal.accent} strokeWidth={2.2} />
-            <span>¿Antojos?</span>
+            <span>{t('recipes.hub.cravings')}</span>
           </button>
         </div>
       </div>
 
       {/* Tus recetas */}
-      <Section title="Tus recetas"
-        subtitle={activeCount > 0 ? `${filteredYours.length} de ${yours.length} con filtros` : 'Las que creaste tú'}
+      <Section title={groupLabel('yours')}
+        subtitle={activeCount > 0 ? t('recipes.hub.filtered', { a: filteredYours.length, b: yours.length }) : t('recipes.hub.yoursSubtitle')}
         emoji="💚"
         inlineAction={
           <button onClick={() => setFiltersOpen(true)} style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
             padding: '5px 12px', borderRadius: 14, cursor: 'pointer',
-            background: activeCount > 0 ? pal.ink : pal.surface,
-            color: activeCount > 0 ? pal.bg : pal.ink,
+            background: activeCount > 0 ? pal.ink : pal.surface, // i18n-ignore
+            color: activeCount > 0 ? pal.bg : pal.ink, // i18n-ignore
             border: `0.5px solid ${activeCount > 0 ? pal.ink : pal.lineStrong}`,
             fontSize: 11, fontWeight: 700,
             boxShadow: activeCount > 0 ? 'none' : LF_SHADOWS.sm,
           }}>
-            <span>🔽</span><span>{activeCount > 0 ? `Filtrar (${activeCount})` : 'Filtrar'}</span>
+            <span>🔽</span><span>{activeCount > 0 ? t('recipes.hub.filterN', { n: activeCount }) : t('recipes.hub.filter')}</span>
           </button>
         }>
         <HScroll>
@@ -192,7 +245,7 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
         </HScroll>
         {activeCount > 0 && filteredYours.length === 0 && (
           <div style={{ padding: '0 20px', fontSize: 12, color: pal.inkFaint }}>
-            Ninguna receta tuya cumple los filtros.
+            {t('recipes.hub.noMatch')}
           </div>
         )}
       </Section>
@@ -207,7 +260,7 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
 
       {!aiBusy && aiData && (
         <>
-          <Section title="Cero esfuerzo" subtitle="Listas con lo que tienes" emoji="😴" tag="✨ IA">
+          <Section title={groupLabel('effortless')} subtitle={t('recipes.hub.effortlessSubtitle')} emoji="😴" tag={t('recipes.hub.aiTag')}>
             {(aiData.effortless?.length || 0) > 0 ? (
               <HScroll>{aiData.effortless.map((r, idx) => (
                 replacingSlots.has(`effortless:${idx}`)
@@ -220,7 +273,7 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
             ) : <EmptyAi pal={pal} />}
           </Section>
 
-          <Section title="Modo chef" subtitle="Para cuando tengas tiempo" emoji="👨‍🍳" tag="✨ IA">
+          <Section title={groupLabel('chef')} subtitle={t('recipes.hub.chefSubtitle')} emoji="👨‍🍳" tag={t('recipes.hub.aiTag')}>
             {(aiData.chef?.length || 0) > 0 ? (
               <HScroll>{aiData.chef.map((r, idx) => (
                 replacingSlots.has(`chef:${idx}`)
@@ -233,7 +286,7 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
             ) : <EmptyAi pal={pal} />}
           </Section>
 
-          <Section title="Te falta 1 ingrediente" subtitle="Casi listas" emoji="🎯" tag="✨ IA">
+          <Section title={groupLabel('oneOff')} subtitle={t('recipes.hub.oneOffSubtitle')} emoji="🎯" tag={t('recipes.hub.aiTag')}>
             {(aiData.oneOff?.length || 0) > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {aiData.oneOff.map((r, idx) => (
@@ -277,7 +330,7 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
 const InspireBanner = ({ aiData, aiBusy, onInspire, hasItems }) => {
   const { pal, fonts } = useLF();
   const generatedDate = aiData?.generatedAt
-    ? new Date(aiData.generatedAt).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    ? fmtDateTime(aiData.generatedAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
     : null;
   return (
     <div style={{ padding: '0 20px 16px' }}>
@@ -291,12 +344,12 @@ const InspireBanner = ({ aiData, aiBusy, onInspire, hasItems }) => {
           <span style={{ fontSize: 22 }}>{aiBusy ? '⏳' : '✨'}</span>
           <div style={{ textAlign: 'left' }}>
             <div style={{ fontFamily: fonts.display, fontSize: 16, fontWeight: 700 }}>
-              {aiBusy ? 'Pensando recetas…' : aiData ? 'Regenerar sugerencias' : 'Inspírame'}
+              {aiBusy ? t('recipes.inspire.thinking') : aiData ? t('recipes.inspire.regenerate') : t('recipes.inspire.cta')}
             </div>
             <div style={{ fontSize: 11, opacity: 0.75 }}>
-              {!hasItems ? 'Añade items primero'
-                : aiData ? `Última: ${generatedDate}`
-                : '9 ideas con lo que tienes'}
+              {!hasItems ? t('recipes.inspire.needItems')
+                : aiData ? t('recipes.inspire.last', { date: generatedDate })
+                : t('recipes.inspire.ideas', { n: HUB_IDEAS })}
             </div>
           </div>
         </div>
@@ -337,7 +390,7 @@ const EmptyAi = ({ pal }) => (
     margin: '0 20px', padding: 14, fontSize: 12, color: pal.inkFaint, textAlign: 'center',
     background: pal.surface, borderRadius: 12, border: `0.5px dashed ${pal.lineStrong}`,
   }}>
-    La IA no devolvió sugerencias para esta sección esta vez
+    {t('recipes.hub.emptyAi')}
   </div>
 );
 
@@ -355,7 +408,7 @@ const SlotPlaceholder = ({ size = 'md', variant }) => {
         animation: 'lf-pulse 1.4s ease-in-out infinite',
       }}>
         <span style={{ fontSize: 18 }}>✨</span>
-        <span style={{ fontSize: 12, fontWeight: 600 }}>Dándole otra vuelta…</span>
+        <span style={{ fontSize: 12, fontWeight: 600 }}>{t('recipes.hub.rethinking')}</span>
       </div>
     );
   }
@@ -376,7 +429,7 @@ const SlotPlaceholder = ({ size = 'md', variant }) => {
         padding: '10px 12px', fontSize: 11, fontWeight: 600,
         color: pal.inkSoft, textAlign: 'center', minHeight: 60,
       }}>
-        Dándole otra vuelta…
+        {t('recipes.hub.rethinking')}
       </div>
       <style>{`@keyframes lf-pulse {
         0%, 100% { opacity: 0.55; }
@@ -402,10 +455,10 @@ const RegenerateLoadingCard = () => {
           animation: 'lf-bounce 1.4s ease-in-out infinite',
         }}>✨</div>
         <div style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 700, color: pal.ink, textAlign: 'center' }}>
-          A ver qué tienes por casa…
+          {t('recipes.inspire.loadingTitle')}
         </div>
         <div style={{ fontSize: 12, color: pal.inkSoft, textAlign: 'center', maxWidth: 260, lineHeight: 1.4 }}>
-          Estoy pensando 15 ideas con tu inventario. Tarda unos segundos.
+          {t('recipes.inspire.loadingBody', { n: HUB_IDEAS })}
         </div>
         <style>{`@keyframes lf-bounce {
           0%, 100% { transform: translateY(0) scale(1); }
@@ -431,9 +484,9 @@ const RecipeCard = ({ recipe, stock, onClick, size = 'md' }) => {
   const usesExpiring = expiringItems.length > 0;
   const badge = stock ? stockBadge(stock.state, pal) : null;
   const tooltip = stock
-    ? (stock.state === 'ready' ? 'Tienes todos los ingredientes' :
-       stock.state === 'partial' ? `Te falta poco: ${[...stock.missing, ...stock.partial].map((i) => i.name).slice(0, 3).join(', ')}` :
-       `Te faltan: ${stock.missing.map((i) => i.name).slice(0, 3).join(', ')}`)
+    ? (stock.state === 'ready' ? t('recipes.card.haveAll') :
+       stock.state === 'partial' ? t('recipes.card.almost', { names: [...stock.missing, ...stock.partial].map((i) => i.name).slice(0, 3).join(', ') }) :
+       t('recipes.card.missing', { names: stock.missing.map((i) => i.name).slice(0, 3).join(', ') }))
     : '';
   return (
     <button onClick={onClick} style={{
@@ -450,8 +503,8 @@ const RecipeCard = ({ recipe, stock, onClick, size = 'md' }) => {
           padding: '4px 8px', borderRadius: 10,
           background: pal.danger, color: '#fff',
           fontSize: 10, fontWeight: 700, boxShadow: LF_SHADOWS.sm,
-        }} title={`Usa: ${expiringItems.join(', ')}`}>
-          <span>⏳</span><span>Úsalo ya</span>
+        }} title={t('recipes.card.uses', { items: expiringItems.join(', ') })}>
+          <span>⏳</span><span>{t('recipes.card.useNow')}</span>
         </div>
       )}
       {badge && (
@@ -469,7 +522,7 @@ const RecipeCard = ({ recipe, stock, onClick, size = 'md' }) => {
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 8, fontSize: 11, color: pal.inkSoft, alignItems: 'center', flexWrap: 'wrap' }}>
           <span>🍳 {recipe.effort}</span>
-          <span>⏱ {recipe.time}m</span>
+          <span>⏱ {t('common.minutesCompact', { n: recipe.time })}</span>
         </div>
       </div>
     </button>
@@ -486,7 +539,7 @@ const AddRecipeCard = ({ onClick }) => {
       gap: 6, color: pal.inkSoft, cursor: 'pointer', padding: 20,
     }}>
       <LFIcon name="plus" size={22} />
-      <span style={{ fontSize: 11, fontWeight: 600 }}>Nueva receta</span>
+      <span style={{ fontSize: 11, fontWeight: 600 }}>{t('recipes.card.newRecipe')}</span>
     </button>
   );
 };
@@ -502,7 +555,7 @@ const AICard = ({ recipe, size = 'md', hid, onPreview, onSavedAsOwn, onDismiss }
     }}>
       {onDismiss && (
         <button onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-          title="No me convence, dame otra"
+          title={t('recipes.card.dismiss')}
           style={{
             position: 'absolute', top: 6, right: 6, zIndex: 2,
             width: 24, height: 24, borderRadius: 12,
@@ -525,7 +578,7 @@ const AICard = ({ recipe, size = 'md', hid, onPreview, onSavedAsOwn, onDismiss }
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 6, fontSize: 11, color: pal.inkSoft, alignItems: 'center' }}>
           {recipe.effort != null && <span>🍳 {recipe.effort}</span>}
-          {recipe.time != null && <span>⏱ {recipe.time}m</span>}
+          {recipe.time != null && <span>⏱ {t('common.minutesCompact', { n: recipe.time })}</span>}
         </div>
         {recipe.uses?.length > 0 && (
           <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginTop: 6 }}>
@@ -555,7 +608,7 @@ const AIMissingCard = ({ recipe, hid, onPreview, onDismiss }) => {
     }} onClick={onPreview}>
       {onDismiss && (
         <button onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-          title="Dame otra"
+          title={t('recipes.card.dismissShort')}
           style={{
             position: 'absolute', top: 6, right: 6, zIndex: 2,
             width: 22, height: 22, borderRadius: 11,
@@ -573,7 +626,7 @@ const AIMissingCard = ({ recipe, hid, onPreview, onDismiss }) => {
           <div style={{ fontSize: 14, fontWeight: 700, color: pal.ink }}>{recipe.name}</div>
           <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 11, color: pal.inkSoft }}>
             {recipe.effort != null && <span>🍳 {recipe.effort}</span>}
-            {recipe.time != null && <span>⏱ {recipe.time}m</span>}
+            {recipe.time != null && <span>⏱ {t('common.minutesCompact', { n: recipe.time })}</span>}
           </div>
         </div>
         <div style={{
@@ -581,8 +634,8 @@ const AIMissingCard = ({ recipe, hid, onPreview, onDismiss }) => {
           padding: '4px 8px', background: pal.accentSoft, borderRadius: 8,
           alignSelf: 'flex-start', marginTop: 6,
         }}>
-          <span style={{ fontSize: 10, fontWeight: 700, color: pal.ink }}>FALTA</span>
-          <span style={{ fontSize: 11, color: pal.ink }}>{recipe.missingItem || 'algo'}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: pal.ink }}>{t('recipes.card.missingTag')}</span>
+          <span style={{ fontSize: 11, color: pal.ink }}>{recipe.missingItem || t('recipes.card.missingFallback')}</span>
         </div>
       </div>
       <button onClick={async (e) => {
@@ -594,15 +647,15 @@ const AIMissingCard = ({ recipe, hid, onPreview, onDismiss }) => {
             name: recipe.missingItem, qty: '', cat: null, checked: 0, auto: 1, count: 1,
           });
           await syncHousehold(hid);
-          toast(`${recipe.missingItem} añadido a la lista`);
-        } catch (e) { toast(e?.message || 'Error', 'error'); }
+          toast(t('recipes.card.addedToList', { item: recipe.missingItem }));
+        } catch (e) { toast(errMsg(e), 'error'); }
       }} style={{
         width: 56, flexShrink: 0, background: pal.primary,
         border: 'none', color: '#fff', cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2,
       }}>
         <LFIcon name="plus" size={22} color="#fff" strokeWidth={2.4} />
-        <span style={{ fontSize: 9, fontWeight: 700 }}>Lista</span>
+        <span style={{ fontSize: 9, fontWeight: 700 }}>{t('recipes.card.listBtn')}</span>
       </button>
     </div>
   );
@@ -633,15 +686,15 @@ const AIPreviewModal = ({ recipe, hid, onClose, onSavedAsOwn }) => {
         effort: Number(recipe.effort) || 1,
         servings: 2,
         img: recipe.img || 'pasta',
-        desc: recipe.why || `${recipe.name} con lo que tienes en casa.`,
+        desc: recipe.why || t('recipes.withWhatYouHave', { name: recipe.name }),
         ingredients: (recipe.uses || []).map((name) => ({ name, qty: '', unit: '', itemId: null })),
         steps: recipe.steps || [],
         tools: recipe.tools || [],
       });
       await syncHousehold(hid);
-      toast('Guardada en "Tus recetas"');
+      toast(t('recipes.preview.saved'));
       onSavedAsOwn?.(created?.id);
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
     finally { setSaving(false); }
   };
 
@@ -667,12 +720,12 @@ const AIPreviewModal = ({ recipe, hid, onClose, onSavedAsOwn }) => {
               display: 'inline-flex', alignItems: 'center', gap: 4,
               padding: '3px 8px', background: pal.primarySoft, color: pal.primary,
               borderRadius: 8, fontSize: 10, fontWeight: 700, marginBottom: 8,
-            }}>✨ Sugerencia IA</div>
+            }}>{t('recipes.preview.badge')}</div>
             <h1 style={{ fontFamily: fonts.display, fontSize: 24, fontWeight: 700, color: pal.ink, margin: 0, letterSpacing: '-0.02em' }}>
               {recipe.name}
             </h1>
             <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 13, color: pal.inkSoft }}>
-              {recipe.time != null && <span>⏱ {recipe.time} min</span>}
+              {recipe.time != null && <span>⏱ {t('common.minutesShort', { n: recipe.time })}</span>}
               {recipe.effort != null && <span>🍳 {recipe.effort}</span>}
             </div>
             {recipe.why && (
@@ -683,14 +736,14 @@ const AIPreviewModal = ({ recipe, hid, onClose, onSavedAsOwn }) => {
                 marginTop: 12, padding: 10, background: pal.accentSoft, borderRadius: 12,
                 fontSize: 13, color: pal.ink,
               }}>
-                <strong>Te falta:</strong> {recipe.missingItem}
+                <strong>{t('recipes.preview.youMiss')}</strong> {recipe.missingItem}
               </div>
             )}
 
             {recipe.uses?.length > 0 && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 700, color: pal.inkSoft, letterSpacing: '0.04em', textTransform: 'uppercase', marginTop: 18, marginBottom: 8 }}>
-                  Ingredientes propuestos
+                  {t('recipes.preview.proposed')}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {recipe.uses.map((u, i) => (
@@ -706,7 +759,7 @@ const AIPreviewModal = ({ recipe, hid, onClose, onSavedAsOwn }) => {
             {recipe.steps?.length > 0 && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 700, color: pal.inkSoft, letterSpacing: '0.04em', textTransform: 'uppercase', marginTop: 18, marginBottom: 8 }}>
-                  Pasos
+                  {t('recipes.steps')}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {recipe.steps.map((s, i) => (
@@ -727,15 +780,15 @@ const AIPreviewModal = ({ recipe, hid, onClose, onSavedAsOwn }) => {
             {recipe.tools?.length > 0 && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 700, color: pal.inkSoft, letterSpacing: '0.04em', textTransform: 'uppercase', marginTop: 18, marginBottom: 8 }}>
-                  A fregar luego
+                  {t('recipes.preview.toWash')}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {recipe.tools.map((t, i) => (
+                  {recipe.tools.map((tool, i) => (
                     <span key={i} style={{
                       padding: '5px 10px', borderRadius: 10,
                       background: pal.surface, border: `0.5px solid ${pal.line}`,
                       fontSize: 12, color: pal.ink,
-                    }}>{t}</span>
+                    }}>{tool}</span>
                   ))}
                 </div>
               </>
@@ -751,13 +804,13 @@ const AIPreviewModal = ({ recipe, hid, onClose, onSavedAsOwn }) => {
             flex: 1, padding: 14, background: pal.bg,
             border: `0.5px solid ${pal.line}`, borderRadius: 14,
             color: pal.inkSoft, fontSize: 14, fontWeight: 600, cursor: 'pointer',
-          }}>Cerrar</button>
+          }}>{t('common.close')}</button>
           <button onClick={saveAsRecipe} disabled={saving} style={{
             flex: 2, padding: 14, background: pal.primary, color: '#fff',
             border: 'none', borderRadius: 14,
             fontSize: 14, fontWeight: 700, cursor: saving ? 'default' : 'pointer',
           }}>
-            {saving ? 'Guardando…' : '💾 Guardar como mi receta'}
+            {saving ? t('common.saving') : t('recipes.preview.save')}
           </button>
         </div>
       </div>

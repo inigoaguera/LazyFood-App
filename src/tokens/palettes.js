@@ -1,6 +1,8 @@
+import { t } from '../i18n/index.js';
+
 export const LF_PALETTES = {
   huerto: {
-    name: 'Huerto',
+    get name() { return t('profile.palette.huerto'); },
     bg: '#F5F1E8',
     surface: '#FFFCF4',
     ink: '#1F2A1C',
@@ -21,7 +23,7 @@ export const LF_PALETTES = {
     lineStrong: 'rgba(30,42,28,0.15)',
   },
   menta: {
-    name: 'Menta',
+    get name() { return t('profile.palette.menta'); },
     bg: '#F4F8F6',
     surface: '#FFFFFF',
     ink: '#0F1F1A',
@@ -42,7 +44,7 @@ export const LF_PALETTES = {
     lineStrong: 'rgba(15,31,26,0.14)',
   },
   terracota: {
-    name: 'Terracota',
+    get name() { return t('profile.palette.terracota'); },
     bg: '#F6EFE7',
     surface: '#FFF9F1',
     ink: '#2A1F17',

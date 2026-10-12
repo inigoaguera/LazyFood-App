@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { namesMatch } from '../util/stock.js';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db.js';
 import { useLF } from '../components/ctx.js';
@@ -10,7 +11,7 @@ import { RecipeThumb } from '../data/recipeThumbs.jsx';
 // Muestra primero las recetas guardadas que mencionan ese ingrediente.
 // "Más ideas con IA" lleva al chat de Antojos con prompt automático.
 export default function UseIngredient({ item, hid, onOpenRecipe, onOpenChat, onClose }) {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const recipes = useLiveQuery(
     () => hid ? db.recipes.where({ householdId: hid }).toArray() : Promise.resolve([]),
     [hid], []
@@ -23,20 +24,18 @@ export default function UseIngredient({ item, hid, onOpenRecipe, onOpenChat, onC
   // Recetas guardadas que mencionan el ingrediente (linked or fuzzy)
   const matched = useMemo(() => {
     const detailsByName = new Map(recipeDetails.map((d) => [d.matchName || d.name, d]));
-    const q = item.name.toLowerCase().split(' ')[0];
     return recipes.filter((r) => {
       const det = detailsByName.get(r.name);
       if (!det?.ingredients) return false;
       return det.ingredients.some((ing) => {
         if (ing.itemId === item.id) return true;
-        const ingName = (ing.name || '').toLowerCase();
-        return ingName.includes(q) || q.includes(ingName.split(' ')[0]);
+        return namesMatch(ing.name, item.name);
       });
     });
   }, [recipes, recipeDetails, item]);
 
   const askAi = () => {
-    const prompt = `Recetas usando "${item.name}" porque me caduca pronto. Comidas/cenas completas.`;
+    const prompt = t('home.use.prompt', { name: item.name });
     onClose();
     onOpenChat?.(prompt);
   };
@@ -63,7 +62,7 @@ export default function UseIngredient({ item, hid, onOpenRecipe, onOpenChat, onC
           }}>{item.emoji}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: pal.accent, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-              Usa esto pronto
+              {t('home.use.eyebrow')}
             </div>
             <div style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 700, color: pal.ink }}>{item.name}</div>
           </div>
@@ -72,7 +71,7 @@ export default function UseIngredient({ item, hid, onOpenRecipe, onOpenChat, onC
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 24px' }}>
           {matched.length > 0 && (
             <>
-              <SectionLabel pal={pal}>De tus recetas ({matched.length})</SectionLabel>
+              <SectionLabel pal={pal}>{t('home.use.fromRecipes', { n: matched.length })}</SectionLabel>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
                 {matched.map((r) => (
                   <button key={r.id} onClick={() => { onClose(); onOpenRecipe?.(r.id); }} style={{
@@ -89,7 +88,7 @@ export default function UseIngredient({ item, hid, onOpenRecipe, onOpenChat, onC
                       <div style={{ fontSize: 14, fontWeight: 700, color: pal.ink }}>{r.name}</div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 11, color: pal.inkSoft }}>
                         <span>🍳 {r.effort}</span>
-                        <span>⏱ {r.time}m</span>
+                        <span>⏱ {t('common.minutesCompact', { n: r.time })}</span>
                       </div>
                     </div>
                   </button>
@@ -104,7 +103,7 @@ export default function UseIngredient({ item, hid, onOpenRecipe, onOpenChat, onC
               background: pal.surface, borderRadius: 14, border: `0.5px dashed ${pal.lineStrong}`,
               marginBottom: 16,
             }}>
-              Aún no tienes recetas guardadas que usen {item.name}. Pídele a la IA que te proponga.
+              {t('home.use.noRecipes', { name: item.name })}
             </div>
           )}
         </div>
@@ -114,7 +113,7 @@ export default function UseIngredient({ item, hid, onOpenRecipe, onOpenChat, onC
           borderTop: `0.5px solid ${pal.line}`,
         }}>
           <Button tone="primary" size="lg" fullWidth icon="sparkle" onClick={askAi}>
-            Más ideas con IA
+            {t('home.use.moreIdeas')}
           </Button>
         </div>
       </div>

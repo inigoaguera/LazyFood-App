@@ -1,10 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { ensureSeed } from './db.js';
 import { lfEnsureFont } from './tokens/fonts.js';
+import { initNav } from './util/nav.js';
 
 lfEnsureFont('playful');
+initNav();
 
 // Eruda: consola embebida para debug en móvil. Persistente vía lf_debug.
 import { isDebugActive } from './util/debug.js';
@@ -37,7 +40,9 @@ ensureSeed().then(async () => {
   await requestPersistentStorage();
   ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </React.StrictMode>,
   );
 });

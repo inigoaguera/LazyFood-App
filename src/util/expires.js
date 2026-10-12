@@ -1,6 +1,8 @@
 // Lógica de caducidad: traduce el modelo (expiresAt + frozenAt + openedAt)
 // en datos listos para pintar.
 
+import { t } from '../i18n/index.js';
+
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Días de frescura por categoría cuando el item se "abre" o se mueve a la nevera.
@@ -40,22 +42,22 @@ export function suggestedExpiresAt(cat, loc, openedAt = null, now = Date.now()) 
 //     urgent, warn (booleans) }
 export function expiryStatus(item, now = Date.now()) {
   if (item.frozenAt != null) {
-    return { state: 'frozen', label: 'congelado', days: null, urgent: false, warn: false };
+    return { state: 'frozen', label: t('domain.expiry.frozen'), days: null, urgent: false, warn: false };
   }
   if (item.expiresAt == null) {
     if (item.openedAt == null) {
-      return { state: 'sealed', label: 'sin caducidad', days: null, urgent: false, warn: false };
+      return { state: 'sealed', label: t('domain.expiry.sealed'), days: null, urgent: false, warn: false };
     }
-    return { state: 'sealed', label: 'sin caducidad', days: null, urgent: false, warn: false };
+    return { state: 'sealed', label: t('domain.expiry.sealed'), days: null, urgent: false, warn: false };
   }
   const diffMs = item.expiresAt - now;
   const days = Math.ceil(diffMs / DAY_MS);
-  if (days <= 0) return { state: 'expired', label: 'caducado', days, urgent: true, warn: false };
-  if (days === 1) return { state: 'soon', label: 'mañana', days, urgent: true, warn: false };
-  if (days < 4)  return { state: 'soon',  label: `en ${days} días`, days, urgent: true, warn: false };
-  if (days < 8)  return { state: 'ok',    label: `en ${days} días`, days, urgent: false, warn: true };
-  if (days < 30) return { state: 'ok',    label: `en ${Math.ceil(days / 7)} sem`, days, urgent: false, warn: false };
-  return { state: 'ok', label: `en ${Math.ceil(days / 30)} m`, days, urgent: false, warn: false };
+  if (days <= 0) return { state: 'expired', label: t('domain.expiry.expired'), days, urgent: true, warn: false };
+  if (days === 1) return { state: 'soon', label: t('domain.expiry.tomorrow'), days, urgent: true, warn: false };
+  if (days < 4)  return { state: 'soon',  label: t('domain.expiry.inDays', { n: days }), days, urgent: true, warn: false };
+  if (days < 8)  return { state: 'ok',    label: t('domain.expiry.inDays', { n: days }), days, urgent: false, warn: true };
+  if (days < 30) return { state: 'ok',    label: t('domain.expiry.inWeeks', { n: Math.ceil(days / 7) }), days, urgent: false, warn: false };
+  return { state: 'ok', label: t('domain.expiry.inMonths', { n: Math.ceil(days / 30) }), days, urgent: false, warn: false };
 }
 
 // Útil para "úsalos esta semana" en Home: items que caducan pronto y no congelados.

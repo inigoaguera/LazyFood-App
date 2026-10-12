@@ -31,8 +31,8 @@ export async function redeemInvite(request, env, cors, auth, token) {
   const inv = await env.lazyfood_db.prepare(
     'SELECT household_id, expires_at, max_uses, used_count FROM invites WHERE token=?'
   ).bind(token).first();
-  if (!inv) return errorResponse('BAD_TOKEN', 'Invitación no válida', 404, cors);
-  if (inv.expires_at < now()) return errorResponse('EXPIRED', 'Invitación caducada', 400, cors);
+  if (!inv) return errorResponse('INVITE_INVALID', 'Invitación no válida', 404, cors);
+  if (inv.expires_at < now()) return errorResponse('INVITE_EXPIRED', 'Invitación caducada', 400, cors);
   if (inv.used_count >= inv.max_uses) return errorResponse('USED_UP', 'Invitación agotada', 400, cors);
 
   // ¿ya soy miembro?

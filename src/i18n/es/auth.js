@@ -1,0 +1,30 @@
+// Namespace 'auth'. Mismas claves en es/ y en/ — ver src/i18n/index.js.
+export default {
+  login: {
+    title: 'Bienvenida a LazyFood',
+    titleSent: 'Mira tu email',
+    sentTo: 'Te he mandado un código a {email}. Pégalo aquí abajo, o pulsa el link del email.',
+    inviteHint: 'Mete tu email para aceptar la invitación y unirte a la casa.',
+    hint: 'Sin contraseña. Pones tu email y te llega un código para entrar.',
+    emailPlaceholder: 'tu@email.com',
+    sending: 'Enviando…',
+    send: 'Mandarme el link',
+    sendFailed: 'No he podido enviar el email',
+    verifying: 'Verificando…',
+    submitCode: 'Entrar con el código',
+    badCode: 'Código incorrecto',
+    retry: '¿Otro email? Probar de nuevo',
+    footer: 'Tus datos se guardan asociados a tu email. Si pierdes acceso al email, pierdes acceso a tus casas.',
+  },
+  verify: {
+    verifying: 'Verificando…',
+    joining: 'Uniéndote a la casa…',
+    welcome: '¡Bienvenida a {name}!',
+    theHouse: 'la casa',
+    done: '¡Listo!',
+    failed: 'Ha fallado',
+    verifyFailed: 'No he podido verificar el link',
+    inviteInvalid: 'Te has logueado, pero la invitación no es válida: {error}',
+    restart: 'Volver a empezar',
+  },
+};

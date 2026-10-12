@@ -17,9 +17,17 @@ export async function listAll(table, hid) {
   const path = RES_PATH[table];
   const res = await api(`/households/${hid}/${path}`);
   if (Array.isArray(res?.rows)) {
-    // borra cache vieja de esta casa y reescribe (snapshot completo)
-    await db.table(table).where({ householdId: hid }).delete();
+    // Primero escribe, luego borra lo que ya no viene. Al revés (borrar todo y
+    // reescribir) los useLiveQuery emitían un array vacío entre las dos
+    // operaciones: parpadeo de "no tienes nada" en cada cambio de casa y en
+    // cada arranque, y cache vacía si el bulkPut fallaba a mitad.
     await cachePutMany(table, hid, res.rows);
+    const fresh = new Set(res.rows.map((r) => r.id));
+    const stale = await db.table(table)
+      .where({ householdId: hid })
+      .filter((r) => !fresh.has(r.id))
+      .primaryKeys();
+    if (stale.length) await db.table(table).bulkDelete(stale);
   }
   return res;
 }
@@ -62,7 +70,13 @@ export async function remove(table, hid, id) {
 export async function listMenuPlan(hid, since = 0) {
   const res = await api(`/households/${hid}/menu-plan?since=${since}`);
   for (const r of res.rows || []) {
-    await db.menuPlan.put({ householdId: hid, slot: r.slot, recipeId: r.recipeId, updated_at: r.updated_at });
+    // Un slot desasignado viaja como fila con deleted_at: hay que quitarlo de
+    // la cache, si no la receta se queda puesta en este dispositivo.
+    if (r.deleted_at) {
+      await db.menuPlan.delete([hid, r.slot]);
+    } else {
+      await db.menuPlan.put({ householdId: hid, slot: r.slot, recipeId: r.recipeId, updated_at: r.updated_at });
+    }
   }
   return res;
 }

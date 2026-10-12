@@ -29,7 +29,14 @@ const RESOURCES = {
     table: 'recipes',
     columns: ['name', 'time', 'effort', 'missing', 'missing_item', 'img', 'group', 'author'],
     // El frontend manda missingItem (camelCase) pero la columna SQL es missing_item.
-    fromClient: (p) => ({ ...p, missing_item: p.missingItem ?? p.missing_item ?? null, missingItem: undefined }),
+    // Sólo se toca si viene en el payload: un PATCH parcial no debe anularla.
+    fromClient: (p) => {
+      const out = { ...p, missingItem: undefined };
+      if ('missingItem' in p || 'missing_item' in p) {
+        out.missing_item = p.missingItem ?? p.missing_item ?? null;
+      }
+      return out;
+    },
     toClient: (r) => ({ ...r, missingItem: r.missing_item, missing_item: undefined }),
   },
   shopping: {
@@ -43,13 +50,22 @@ const RESOURCES = {
   expenses: {
     table: 'expenses',
     columns: ['date', 'amount', 'cat', 'store', 'saved_on_discounts', 'items_json', 'photo_url'],
-    fromClient: (p) => ({
-      ...p,
-      saved_on_discounts: p.savedOnDiscounts ?? p.saved_on_discounts ?? null,
-      items_json: p.items ? JSON.stringify(p.items) : (p.items_json ?? null),
-      photo_url: p.photoUrl ?? p.photo_url ?? null,
-      savedOnDiscounts: undefined, items: undefined, photoUrl: undefined,
-    }),
+    // Sólo tocamos las columnas que vengan en el payload. Así un PATCH parcial
+    // (p.ej. cambiar sólo el total) no puede borrar el desglose guardado del
+    // ticket ni la foto: el registro de la compra es permanente.
+    fromClient: (p) => {
+      const out = { ...p, savedOnDiscounts: undefined, items: undefined, photoUrl: undefined };
+      if ('savedOnDiscounts' in p || 'saved_on_discounts' in p) {
+        out.saved_on_discounts = p.savedOnDiscounts ?? p.saved_on_discounts ?? null;
+      }
+      if ('items' in p || 'items_json' in p) {
+        out.items_json = p.items ? JSON.stringify(p.items) : (p.items_json ?? null);
+      }
+      if ('photoUrl' in p || 'photo_url' in p) {
+        out.photo_url = p.photoUrl ?? p.photo_url ?? null;
+      }
+      return out;
+    },
     toClient: (r) => ({
       ...r,
       savedOnDiscounts: r.saved_on_discounts,
@@ -61,14 +77,26 @@ const RESOURCES = {
   'recipe-details': {
     table: 'recipe_details',
     columns: ['match_name', 'name', 'time', 'effort', 'servings', 'img', 'desc', 'ingredients_json', 'steps_json', 'tools_json'],
-    fromClient: (p) => ({
-      ...p,
-      match_name: p.matchName ?? p.match_name ?? null,
-      ingredients_json: p.ingredients ? JSON.stringify(p.ingredients) : (p.ingredients_json ?? null),
-      steps_json: p.steps ? JSON.stringify(p.steps) : (p.steps_json ?? null),
-      tools_json: p.tools ? JSON.stringify(p.tools) : (p.tools_json ?? null),
-      matchName: undefined, ingredients: undefined, steps: undefined, tools: undefined,
-    }),
+    // Igual que en expenses y recipes: cada clave derivada sólo se materializa
+    // si viene en el payload. Antes, un PATCH de sólo {name} dejaba
+    // ingredients_json, steps_json y tools_json a NULL — la receta perdía sus
+    // ingredientes y sus pasos sin ningún aviso.
+    fromClient: (p) => {
+      const out = { ...p, matchName: undefined, ingredients: undefined, steps: undefined, tools: undefined };
+      if ('matchName' in p || 'match_name' in p) {
+        out.match_name = p.matchName ?? p.match_name ?? null;
+      }
+      if ('ingredients' in p || 'ingredients_json' in p) {
+        out.ingredients_json = p.ingredients ? JSON.stringify(p.ingredients) : (p.ingredients_json ?? null);
+      }
+      if ('steps' in p || 'steps_json' in p) {
+        out.steps_json = p.steps ? JSON.stringify(p.steps) : (p.steps_json ?? null);
+      }
+      if ('tools' in p || 'tools_json' in p) {
+        out.tools_json = p.tools ? JSON.stringify(p.tools) : (p.tools_json ?? null);
+      }
+      return out;
+    },
     toClient: (r) => ({
       ...r,
       matchName: r.match_name,

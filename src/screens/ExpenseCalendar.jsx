@@ -1,21 +1,25 @@
 import React, { useState, useMemo } from 'react';
+import { fmtDate, monthLong, weekdayShort, tNodes } from '../i18n/index.js';
 import { useLF } from '../components/ctx.js';
 import { LF_SHADOWS } from '../tokens/palettes.js';
 import LFIcon from '../icons/LFIcon.jsx';
 import ExpenseEditor from './ExpenseEditor.jsx';
 import { localISODate } from '../util/date.js';
+import { expenseLines } from '../util/expenseLines.js';
+import { useBackClose } from '../util/nav.js';
 
-const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+// Índices de la semana (lunes = 0); la inicial de cada día se traduce al pintar.
+const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 
 // Modal full-screen con calendario mensual + lista de gastos por día.
 export default function ExpenseCalendar({ expenses, itemsByExpense = {}, hid, onClose }) {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const [cursor, setCursor] = useState(() => {
     const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() };
   });
   const [selectedDate, setSelectedDate] = useState(null);
   const [editor, setEditor] = useState(null); // { expense?: ..., defaultDate? }
+  useBackClose(!!editor, () => setEditor(null));
 
   // Mapa: 'YYYY-MM-DD' -> [expenses]
   const byDate = useMemo(() => {
@@ -57,33 +61,33 @@ export default function ExpenseCalendar({ expenses, itemsByExpense = {}, hid, on
         padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         borderBottom: `0.5px solid ${pal.line}`,
       }}>
-        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer' }}>Cerrar</button>
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer' }}>{t('common.close')}</button>
         <div style={{ fontFamily: fonts.display, fontSize: 17, fontWeight: 700, color: pal.ink }}>
-          Calendario
+          {t('expenses.calendar.title')}
         </div>
         <button onClick={() => setEditor({ defaultDate: today })} style={{
           background: 'transparent', border: 'none',
           color: pal.primary, fontSize: 14, fontWeight: 700, cursor: 'pointer',
-        }}>+ Nuevo</button>
+        }}>{t('expenses.calendar.new')}</button>
       </div>
 
       <div style={{ padding: '12px 18px', borderBottom: `0.5px solid ${pal.line}` }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <button onClick={goPrev} style={navBtn(pal)}>‹</button>
           <div style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 700, color: pal.ink, textAlign: 'center' }}>
-            {MONTHS[cursor.m]} {cursor.y}
+            {monthLong(cursor.m)} {cursor.y}
           </div>
           <button onClick={goNext} style={navBtn(pal)}>›</button>
         </div>
         <div style={{ marginTop: 4, textAlign: 'center', fontSize: 13, color: pal.inkSoft }}>
-          Total mes: <strong style={{ color: pal.ink }}>{monthTotal.toFixed(2)} €</strong>
+          {tNodes('expenses.calendar.monthTotal', { amount: <strong style={{ color: pal.ink }}>{monthTotal.toFixed(2)} €</strong> })}
         </div>
       </div>
 
       <div style={{ padding: '8px 14px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 6 }}>
           {WEEKDAYS.map((w) => (
-            <div key={w} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: pal.inkFaint, letterSpacing: '0.05em' }}>{w}</div>
+            <div key={w} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: pal.inkFaint, letterSpacing: '0.05em' }}>{weekdayShort(w)}</div>
           ))}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
@@ -128,7 +132,7 @@ export default function ExpenseCalendar({ expenses, itemsByExpense = {}, hid, on
             onEdit={(exp) => setEditor({ expense: exp })} />
         ) : (
           <div style={{ padding: '20px 0', textAlign: 'center', color: pal.inkFaint, fontSize: 13 }}>
-            Toca un día para ver o añadir compras.
+            {t('expenses.calendar.pickDay')}
           </div>
         )}
       </div>
@@ -147,9 +151,9 @@ export default function ExpenseCalendar({ expenses, itemsByExpense = {}, hid, on
 }
 
 const DayDetail = ({ date, expenses, itemsByExpense = {}, onAddNew, onEdit }) => {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const total = expenses.reduce((a, b) => a + (Number(b.amount) || 0), 0);
-  const niceDate = new Date(date + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+  const niceDate = fmtDate(date, { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
     <div>
@@ -158,14 +162,14 @@ const DayDetail = ({ date, expenses, itemsByExpense = {}, onAddNew, onEdit }) =>
           <div style={{ fontFamily: fonts.display, fontSize: 16, fontWeight: 700, color: pal.ink, textTransform: 'capitalize' }}>{niceDate}</div>
           {total > 0 && (
             <div style={{ fontSize: 12, color: pal.inkSoft, marginTop: 2 }}>
-              {expenses.length} compra{expenses.length === 1 ? '' : 's'} · {total.toFixed(2)} €
+              {t('expenses.calendar.trips', { n: expenses.length })} · {total.toFixed(2)} €
             </div>
           )}
         </div>
         <button onClick={onAddNew} style={{
           background: pal.primary, color: '#fff', border: 'none',
           borderRadius: 14, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-        }}>+ Compra</button>
+        }}>{t('expenses.calendar.addTrip')}</button>
       </div>
 
       {expenses.length === 0 ? (
@@ -173,7 +177,7 @@ const DayDetail = ({ date, expenses, itemsByExpense = {}, onAddNew, onEdit }) =>
           padding: 20, textAlign: 'center', color: pal.inkFaint, fontSize: 13,
           background: pal.surface, borderRadius: 14, border: `0.5px dashed ${pal.lineStrong}`,
         }}>
-          Sin compras este día
+          {t('expenses.calendar.noTripsDay')}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -189,8 +193,9 @@ const DayDetail = ({ date, expenses, itemsByExpense = {}, onAddNew, onEdit }) =>
 };
 
 const ExpenseRow = ({ expense, linkedItems = [], onClick }) => {
-  const { pal, fonts } = useLF();
-  const items = linkedItems;
+  const { pal, fonts, t } = useLF();
+  // Desglose guardado en la compra; los items vivos sólo son fallback legacy.
+  const items = expenseLines(expense, linkedItems);
   const itemCount = items.length;
   return (
     <button onClick={onClick} style={{
@@ -202,11 +207,11 @@ const ExpenseRow = ({ expense, linkedItems = [], onClick }) => {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: fonts.display, fontSize: 16, fontWeight: 700, color: pal.ink }}>
-            {expense.store || 'Sin nombre'}
+            {expense.store || t('common.noName')}
           </div>
           <div style={{ fontSize: 11, color: pal.inkSoft, marginTop: 2 }}>
-            {itemCount > 0 ? `${itemCount} producto${itemCount === 1 ? '' : 's'}` : 'sin desglose'}
-            {expense.savedOnDiscounts > 0 && <span style={{ color: pal.primary, marginLeft: 6 }}>· ahorraste {Number(expense.savedOnDiscounts).toFixed(2)}€</span>}
+            {itemCount > 0 ? t('expenses.calendar.products', { n: itemCount }) : t('expenses.calendar.noBreakdown')}
+            {expense.savedOnDiscounts > 0 && <span style={{ color: pal.primary, marginLeft: 6 }}>· {t('expenses.calendar.saved', { amount: Number(expense.savedOnDiscounts).toFixed(2) })}</span>}
           </div>
         </div>
         <div style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 800, color: pal.ink, flexShrink: 0 }}>
@@ -225,7 +230,7 @@ const ExpenseRow = ({ expense, linkedItems = [], onClick }) => {
           ))}
           {items.length > 6 && (
             <span style={{ fontSize: 11, color: pal.inkFaint, padding: '3px 8px' }}>
-              +{items.length - 6} más
+              {t('expenses.calendar.more', { n: items.length - 6 })}
             </span>
           )}
         </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { nameWords } from '../util/stock.js';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getSetting, setSetting } from '../db.js';
 import { useLF } from '../components/ctx.js';
@@ -9,24 +10,35 @@ import { create as resourceCreate } from '../api/resources.js';
 import { syncHousehold } from '../api/sync.js';
 import { toast } from '../components/base.jsx';
 import { RecipeThumb } from '../data/recipeThumbs.jsx';
+import { inventoryForPrompt } from '../util/aiInventory.js';
+import { useBackClose } from '../util/nav.js';
+import { t, errMsg, getLang } from '../i18n/index.js';
 
-const WELCOME = { role: 'ai', text: '¡Hola! Cuéntame qué te apetece y te propongo recetas con lo que tienes en casa. Pídeme rápido, ligero, dulce, sin cocinar… lo que sea.' };
+// Se guarda en el historial, así que se crea con t() en el momento de usarlo
+// (no al importar el módulo) para que salga en el idioma activo.
+const welcome = () => ({ role: 'ai', text: t('chat.welcome') });
 
-const QUICK_FILTERS = [
-  { id: 'quick', label: '⚡ Rápido', prompt: 'menos de 15 minutos' },
-  { id: 'fewdishes', label: '🍽 Pocos cacharros', prompt: 'que ensucie poco' },
-  { id: 'sweet', label: '🍰 Dulce', prompt: 'algo dulce' },
-  { id: 'salty', label: '🧂 Salado', prompt: 'algo salado' },
-  { id: 'light', label: '🥗 Ligero', prompt: 'algo ligero y saludable' },
-  { id: 'comfort', label: '🍲 Comfort', prompt: 'comfort food' },
-  { id: 'noheat', label: '🥶 Sin cocinar', prompt: 'sin encender el fuego' },
-  { id: 'protein', label: '💪 Proteico', prompt: 'alto en proteína' },
+// Tope del historial que se persiste. Cada respuesta lleva recetas completas
+// dentro, así que sin límite la entrada de IndexedDB crece indefinidamente.
+const MAX_HISTORY = 40;
+
+// `label` es el chip y `prompt` el fragmento que viaja a la IA. Es una función
+// (no una constante) para leer el idioma activo en cada uso.
+const quickFilters = () => [
+  { id: 'quick', label: t('chat.filter.quick.label'), prompt: t('chat.filter.quick.prompt') },
+  { id: 'fewdishes', label: t('chat.filter.fewdishes.label'), prompt: t('chat.filter.fewdishes.prompt') },
+  { id: 'sweet', label: t('chat.filter.sweet.label'), prompt: t('chat.filter.sweet.prompt') },
+  { id: 'salty', label: t('chat.filter.salty.label'), prompt: t('chat.filter.salty.prompt') },
+  { id: 'light', label: t('chat.filter.light.label'), prompt: t('chat.filter.light.prompt') },
+  { id: 'comfort', label: t('chat.filter.comfort.label'), prompt: t('chat.filter.comfort.prompt') },
+  { id: 'noheat', label: t('chat.filter.noheat.label'), prompt: t('chat.filter.noheat.prompt') },
+  { id: 'protein', label: t('chat.filter.protein.label'), prompt: t('chat.filter.protein.prompt') },
 ];
 
 export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
   const { pal, fonts, currentHouseholdMeta } = useLF();
   const hid = currentHouseholdMeta?.id;
-  const [messages, setMessages] = useState([WELCOME]);
+  const [messages, setMessages] = useState(() => [welcome()]);
   const [hydrated, setHydrated] = useState(false);
   const [input, setInput] = useState('');
   const [filters, setFilters] = useState({});
@@ -54,10 +66,16 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
     return () => { cancelled = true; };
   }, [hid]);
 
-  // Persistir cada vez que cambia (sólo si ya hidratamos para no machacar el historial al boot)
+  // Persistir cada vez que cambia (sólo si ya hidratamos para no machacar el historial al boot).
+  // Se poda a los últimos MAX_HISTORY: cada respuesta lleva recetas completas
+  // dentro, así que sin tope la entrada de IndexedDB crece sin límite y se
+  // reescribe entera en cada mensaje.
+  // Si el idioma cambia con el chat abierto (p.ej. desde otro móvil), App tira
+  // el historial; no se reescribe con mensajes del idioma anterior.
+  const langAtMount = useRef(getLang());
   useEffect(() => {
-    if (!hid || !hydrated) return;
-    setSetting(`antojos:${hid}`, messages).catch(() => {});
+    if (!hid || !hydrated || getLang() !== langAtMount.current) return;
+    setSetting(`antojos:${hid}`, messages.slice(-MAX_HISTORY)).catch(() => {});
   }, [messages, hid, hydrated]);
 
   useEffect(() => {
@@ -77,59 +95,65 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
   }, [initialPrompt, hydrated, items]);
 
   const clearHistory = async () => {
-    if (!confirm('¿Borrar todo el historial de antojos?')) return;
-    setMessages([WELCOME]);
-    if (hid) await setSetting(`antojos:${hid}`, [WELCOME]);
+    if (!confirm(t('chat.clearConfirm'))) return;
+    const fresh = [welcome()];
+    setMessages(fresh);
+    if (hid) await setSetting(`antojos:${hid}`, fresh);
   };
 
   const toggleFilter = (id) => setFilters((f) => ({ ...f, [id]: !f[id] }));
 
   const send = async (overrideText) => {
     const activeFilters = Object.entries(filters).filter(([, v]) => v).map(([k]) => k);
-    const filterPrompts = activeFilters.map((id) => QUICK_FILTERS.find((f) => f.id === id)?.prompt).filter(Boolean);
+    // OJO: no llamar a esto `filters`, que es el estado leído justo arriba.
+    const defs = quickFilters();
+    const filterPrompts = activeFilters.map((id) => defs.find((f) => f.id === id)?.prompt).filter(Boolean);
     const userText = (overrideText ?? input).trim();
     if (!userText && filterPrompts.length === 0) return;
 
-    const fullUser = [userText, filterPrompts.length ? `(restricciones: ${filterPrompts.join(', ')})` : ''].filter(Boolean).join(' ');
+    const fullUser = [userText, filterPrompts.length ? t('chat.constraints', { list: filterPrompts.join(', ') }) : ''].filter(Boolean).join(' ');
     setMessages((m) => [...m, { role: 'user', text: fullUser }]);
     setInput('');
     setBusy(true);
 
     if (!proxyConfigured()) {
-      setMessages((m) => [...m, { role: 'ai', text: 'Configura VITE_API_PROXY_URL en .env y despliega el worker para que pueda pensar 🤖' }]);
+      setMessages((m) => [...m, { role: 'ai', text: t('chat.noProxy') }]);
       setBusy(false);
       return;
     }
 
     try {
-      const inv = items.map((it) => {
-        const qty = it.type === 'continuous' ? `${it.fill}% (${it.unit})` : `${it.qty} ${it.unit}`;
-        const exp = it.expires <= 5 ? ` ⚠ caduca en ${it.expires}d` : '';
-        return `- ${it.name}: ${qty}${exp}`;
-      }).join('\n');
+      const inv = inventoryForPrompt(items);
 
       const res = await suggestRecipes({ inventory: inv, userPrompt: fullUser });
       if (res?.recipes?.length) {
         setMessages((m) => [...m, { role: 'ai', intro: res.intro, recipes: res.recipes }]);
       } else {
-        setMessages((m) => [...m, { role: 'ai', text: 'No he sacado ideas claras. ¿Probamos otra cosa?' }]);
+        setMessages((m) => [...m, { role: 'ai', text: t('chat.noIdeas') }]);
       }
     } catch (e) {
       const msg = String(e?.message || '');
-      const friendly = msg.includes('429')
-        ? 'Demasiadas peticiones seguidas. Espera ~1 minuto y vuelve a probar 🐢'
-        : 'Ups, no he podido conectar. Inténtalo de nuevo en un momento.';
+      // Un JSON roto no es un problema de red: decirlo mandaba a mirar el wifi
+      // cuando la conexión estaba perfecta.
+      const friendly = e?.code === 'AI_PARSE'
+        ? t('chat.errParse')
+        : (e?.code === 'RATE_LIMIT' || e?.status === 429 || msg.includes('429'))
+          ? t('chat.errRate')
+          : t('chat.errConnect');
       setMessages((m) => [...m, { role: 'ai', text: friendly }]);
     } finally {
       setBusy(false);
-      setFilters({});
     }
   };
 
+  // ¿Esta sugerencia ya está guardada? Sólo con el MISMO nombre (sin tildes,
+  // mayúsculas ni signos), que es como se guarda. Con coincidencias parciales
+  // ("Pasta" dentro de "Pasta al pesto", o la primera palabra como antes),
+  // "Ver" abría otra receta en vez de la sugerencia.
   const matchExisting = (name) => {
-    const lower = (name || '').toLowerCase();
-    const first = lower.split(' ')[0];
-    return recipes.find((r) => r.name.toLowerCase().includes(first) || lower.includes(r.name.toLowerCase().split(' ')[0]));
+    const key = nameWords(name).join(' ');
+    if (!key) return null;
+    return recipes.find((r) => nameWords(r.name).join(' ') === key) || null;
   };
 
   return (
@@ -157,18 +181,18 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
               <LFIcon name="sparkle" size={18} color={pal.primary} strokeWidth={2.2} />
             </div>
             <div>
-              <div style={{ fontFamily: fonts.display, fontSize: 16, fontWeight: 700, color: pal.ink, lineHeight: 1.1 }}>¿Antojos?</div>
-              <div style={{ fontSize: 11, color: pal.inkSoft }}>Recetas con lo que tienes</div>
+              <div style={{ fontFamily: fonts.display, fontSize: 16, fontWeight: 700, color: pal.ink, lineHeight: 1.1 }}>{t('chat.title')}</div>
+              <div style={{ fontSize: 11, color: pal.inkSoft }}>{t('chat.subtitle')}</div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             {messages.length > 1 && (
-              <button onClick={clearHistory} title="Borrar historial" style={{
+              <button onClick={clearHistory} title={t('chat.clearTitle')} style={{
                 background: 'transparent', border: 'none', color: pal.inkFaint,
                 fontSize: 16, padding: '4px 8px', cursor: 'pointer',
               }}>🗑</button>
             )}
-            <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cerrar</button>
+            <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{t('common.close')}</button>
           </div>
         </div>
 
@@ -183,7 +207,7 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
           padding: '6px 18px 8px', display: 'flex', gap: 6, overflowX: 'auto',
           borderTop: `0.5px solid ${pal.line}`, background: pal.surface,
         }}>
-          {QUICK_FILTERS.map((f) => {
+          {quickFilters().map((f) => {
             const active = !!filters[f.id];
             return (
               <button key={f.id} onClick={() => toggleFilter(f.id)} style={{
@@ -205,7 +229,7 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder="Me apetece algo cremoso y rapidito…"
+            placeholder={t('chat.placeholder')}
             rows={1}
             style={{
               flex: 1, resize: 'none', border: 'none',
@@ -216,7 +240,7 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
               fontFamily: fonts.body, lineHeight: 1.3, maxHeight: 100,
             }}
           />
-          <button onClick={send} disabled={busy} style={{
+          <button onClick={() => send()} disabled={busy} style={{
             width: 44, height: 44, borderRadius: 22, flexShrink: 0,
             background: busy ? pal.lineStrong : pal.primary,
             border: 'none', cursor: busy ? 'default' : 'pointer',
@@ -297,6 +321,7 @@ const AISuggestionCard = ({ recipe, hid, matchExisting, onOpenRecipe, onClose })
   const { pal } = useLF();
   const [showPreview, setShowPreview] = useState(false);
   const [saving, setSaving] = useState(false);
+  useBackClose(showPreview, () => setShowPreview(false));
 
   const handleView = () => {
     const m = matchExisting && matchExisting(recipe.name);
@@ -328,18 +353,18 @@ const AISuggestionCard = ({ recipe, hid, matchExisting, onOpenRecipe, onClose })
         effort: Math.max(1, (recipe.tools || []).length),
         servings: 2,
         img: recipe.img || 'pasta',
-        desc: recipe.why || `${recipe.name} con lo que tienes en casa.`,
+        desc: recipe.why || t('recipes.withWhatYouHave', { name: recipe.name }),
         ingredients: (recipe.uses || []).map((name) => ({ name, qty: '', unit: '', itemId: null })),
         steps: recipe.steps || [],
         tools: recipe.tools || [],
       });
       await syncHousehold(hid);
-      toast('Guardada en "Tus recetas" 💾');
+      toast(t('chat.saved'));
       if (onOpenRecipe && created?.id) {
         onClose && onClose();
         onOpenRecipe(created.id);
       }
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
     finally { setSaving(false); }
   };
 
@@ -353,7 +378,7 @@ const AISuggestionCard = ({ recipe, hid, matchExisting, onOpenRecipe, onClose })
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: pal.ink, lineHeight: 1.2 }}>{recipe.name}</div>
             {recipe.time && (
-              <div style={{ fontSize: 11, color: pal.inkSoft, flexShrink: 0 }}>⏱ {recipe.time}m</div>
+              <div style={{ fontSize: 11, color: pal.inkSoft, flexShrink: 0 }}>⏱ {t('common.minutesCompact', { n: recipe.time })}</div>
             )}
           </div>
           {recipe.why && (
@@ -375,13 +400,13 @@ const AISuggestionCard = ({ recipe, hid, matchExisting, onOpenRecipe, onClose })
               flex: 1, padding: '8px 10px', borderRadius: 10,
               background: pal.ink, color: pal.bg, border: 'none',
               fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>Ver receta</button>
+            }}>{t('chat.view')}</button>
             <button onClick={handleSave} disabled={saving} style={{
               padding: '8px 12px', borderRadius: 10,
               background: pal.bg, color: pal.ink,
               border: `0.5px solid ${pal.line}`,
               fontSize: 12, fontWeight: 600, cursor: saving ? 'default' : 'pointer',
-            }}>{saving ? '…' : 'Guardar'}</button>
+            }}>{saving ? '…' : t('common.save')}</button>
           </div>
         </div>
       </div>
@@ -418,12 +443,12 @@ const AntojosPreviewModal = ({ recipe, hid, onSave, onClose }) => {
               display: 'inline-flex', padding: '3px 8px',
               background: pal.primarySoft, color: pal.primary,
               borderRadius: 8, fontSize: 10, fontWeight: 700, marginBottom: 8,
-            }}>✨ Sugerencia IA</div>
+            }}>{t('recipes.preview.badge')}</div>
             <h1 style={{ fontFamily: fonts.display, fontSize: 24, fontWeight: 700, color: pal.ink, margin: 0 }}>
               {recipe.name}
             </h1>
             <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 13, color: pal.inkSoft }}>
-              {recipe.time != null && <span>⏱ {recipe.time} min</span>}
+              {recipe.time != null && <span>⏱ {t('common.minutesShort', { n: recipe.time })}</span>}
               {recipe.tools?.length > 0 && <span>🍳 {recipe.tools.length}</span>}
             </div>
             {recipe.why && (
@@ -432,7 +457,7 @@ const AntojosPreviewModal = ({ recipe, hid, onSave, onClose }) => {
 
             {recipe.uses?.length > 0 && (
               <>
-                <SectionLabel pal={pal}>Ingredientes</SectionLabel>
+                <SectionLabel pal={pal}>{t('recipes.ingredients')}</SectionLabel>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {recipe.uses.map((u, i) => (
                     <div key={i} style={{
@@ -446,7 +471,7 @@ const AntojosPreviewModal = ({ recipe, hid, onSave, onClose }) => {
 
             {recipe.steps?.length > 0 && (
               <>
-                <SectionLabel pal={pal}>Pasos</SectionLabel>
+                <SectionLabel pal={pal}>{t('recipes.steps')}</SectionLabel>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {recipe.steps.map((s, i) => (
                     <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
@@ -465,14 +490,14 @@ const AntojosPreviewModal = ({ recipe, hid, onSave, onClose }) => {
 
             {recipe.tools?.length > 0 && (
               <>
-                <SectionLabel pal={pal}>A fregar luego</SectionLabel>
+                <SectionLabel pal={pal}>{t('recipes.preview.toWash')}</SectionLabel>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {recipe.tools.map((t, i) => (
+                  {recipe.tools.map((tool, i) => (
                     <span key={i} style={{
                       padding: '5px 10px', borderRadius: 10,
                       background: pal.surface, border: `0.5px solid ${pal.line}`,
                       fontSize: 12, color: pal.ink,
-                    }}>{t}</span>
+                    }}>{tool}</span>
                   ))}
                 </div>
               </>
@@ -487,12 +512,12 @@ const AntojosPreviewModal = ({ recipe, hid, onSave, onClose }) => {
             flex: 1, padding: 14, background: pal.bg,
             border: `0.5px solid ${pal.line}`, borderRadius: 14,
             color: pal.inkSoft, fontSize: 14, fontWeight: 600, cursor: 'pointer',
-          }}>Cerrar</button>
+          }}>{t('common.close')}</button>
           <button onClick={onSave} style={{
             flex: 2, padding: 14, background: pal.primary, color: '#fff',
             border: 'none', borderRadius: 14,
             fontSize: 14, fontWeight: 700, cursor: 'pointer',
-          }}>💾 Guardar como mi receta</button>
+          }}>{t('recipes.preview.save')}</button>
         </div>
       </div>
     </div>

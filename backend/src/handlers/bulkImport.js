@@ -77,10 +77,11 @@ export async function bulkImport(request, env, cors, auth, hid) {
 
     for (const raw of body.expenses) {
       const expenseId = uuid();
-      // El expense lo guardamos sin items_json (los items van a la tabla items vinculados).
-      const expensePayload = { ...raw };
-      const linkedItems = expensePayload.items || [];
-      delete expensePayload.items;
+      const linkedItems = Array.isArray(raw.items) ? raw.items : [];
+      // El desglose se guarda DENTRO del expense (items_json) para que el registro
+      // de la compra sobreviva al consumo del inventario; además creamos los items
+      // vinculados en la despensa.
+      const expensePayload = { ...raw, items: linkedItems.map(snapshotLine) };
 
       const expData = fromClient(expSpec, expensePayload);
       const expCols = Object.keys(expData);
@@ -151,6 +152,19 @@ export async function bulkImport(request, env, cors, auth, hid) {
     }
   }
   return json({ ok: true, counts }, 200, cors);
+}
+
+// Línea del ticket tal y como se congela en expenses.items_json.
+function snapshotLine(raw) {
+  return {
+    id: uuid(),
+    name: raw.name || 'Sin nombre',
+    emoji: raw.emoji || '🛒',
+    cat: raw.category || raw.cat || 'otros',
+    qty: raw.qty != null ? Number(raw.qty) : 1,
+    unit: raw.unit || 'uds',
+    price: raw.price != null ? Number(raw.price) : null,
+  };
 }
 
 function guessLoc(cat) {

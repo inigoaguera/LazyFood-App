@@ -7,11 +7,14 @@ import { LF_SHADOWS } from '../tokens/palettes.js';
 import LFIcon from '../icons/LFIcon.jsx';
 import { expiryStatus, isExpiringSoon, compareByExpiry } from '../util/expires.js';
 import UseIngredient from './UseIngredient.jsx';
+import { useBackClose } from '../util/nav.js';
+import { locLabel } from '../i18n/labels.js';
 
 export default function Home({ onOpenLocation, onNav, onOpenRecipe, onOpenChat }) {
-  const { pal, fonts, me, currentHouseholdMeta } = useLF();
+  const { pal, fonts, me, currentHouseholdMeta, t } = useLF();
   const hid = currentHouseholdMeta?.id;
   const [useItem, setUseItem] = useState(null);
+  useBackClose(!!useItem, () => setUseItem(null));
 
   const items = useLiveQuery(
     () => hid ? db.items.where({ householdId: hid }).toArray() : Promise.resolve([]),
@@ -37,12 +40,12 @@ export default function Home({ onOpenLocation, onNav, onOpenRecipe, onOpenChat }
   const userName = me?.name || (me?.email ? me.email.split('@')[0] : '');
   const householdName = currentHouseholdMeta?.name || '';
   const hour = new Date().getHours();
-  const greet = hour < 12 ? 'Buenos días' : hour < 20 ? 'Buenas tardes' : 'Buenas noches';
+  const greet = hour < 12 ? t('home.greeting.morning') : hour < 20 ? t('home.greeting.afternoon') : t('home.greeting.evening');
 
   const locations = [
-    { id: 'fridge',   label: 'Nevera',     emoji: '🧊', color: pal.fridge },
-    { id: 'freezer',  label: 'Congelador', emoji: '❄️', color: pal.freezer },
-    { id: 'pantry',   label: 'Despensa',   emoji: '🫙', color: pal.pantry },
+    { id: 'fridge',   label: locLabel('fridge'),  emoji: '🧊', color: pal.fridge },
+    { id: 'freezer',  label: locLabel('freezer'), emoji: '❄️', color: pal.freezer },
+    { id: 'pantry',   label: locLabel('pantry'),  emoji: '🫙', color: pal.pantry },
   ].map((l) => {
     const ofLoc = items.filter((i) => i.loc === l.id);
     return { ...l, count: ofLoc.length, expiring: ofLoc.filter((i) => isExpiringSoon(i)).length };
@@ -73,7 +76,7 @@ export default function Home({ onOpenLocation, onNav, onOpenRecipe, onOpenChat }
             </div>
           )}
           <div style={{ fontFamily: fonts.display, fontSize: 24, fontWeight: 700, color: pal.ink, letterSpacing: '-0.02em', lineHeight: 1.1, marginTop: 8, whiteSpace: 'nowrap' }}>
-            ¿Qué hay hoy por casa?
+            {t('home.title')}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -83,8 +86,8 @@ export default function Home({ onOpenLocation, onNav, onOpenRecipe, onOpenChat }
       </div>
 
       <div style={{ padding: '14px 20px 0', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {totalExpiring > 0 && <StatusPill icon="clock" label={`${totalExpiring} caducan pronto`} tone="danger" />}
-        <StatusPill icon="leaf" label={`${items.length} items`} tone="green" />
+        {totalExpiring > 0 && <StatusPill icon="clock" label={t('home.expiringSoon', { n: totalExpiring })} tone="danger" />}
+        <StatusPill icon="leaf" label={t('common.items', { n: items.length })} tone="green" />
       </div>
 
       <div style={{ padding: '18px 20px 8px' }}>
@@ -97,14 +100,14 @@ export default function Home({ onOpenLocation, onNav, onOpenRecipe, onOpenChat }
 
       <div style={{ padding: '14px 20px 0' }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: pal.inkFaint, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
-          Accesos rápidos
+          {t('home.quick.title')}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <QuickAction icon="cart" label="Lista compra" badge={shopping.length || null} onClick={() => onNav('shopping')} />
-          <QuickAction icon="calendar" label="Menú semanal" sub={`${menuFilled} / 14 asignados`} onClick={() => onNav('menu')} />
+          <QuickAction icon="cart" label={t('home.quick.shopping')} badge={shopping.length || null} onClick={() => onNav('shopping')} />
+          <QuickAction icon="calendar" label={t('home.quick.menu')} sub={t('home.quick.menuAssigned', { n: menuFilled })} onClick={() => onNav('menu')} />
         </div>
         <div style={{ marginTop: 10 }}>
-          <QuickAction icon="sparkle" label="Qué ceno hoy" sub="Sugerencia IA con lo que tienes" accent wide onClick={() => onNav('recipes')} />
+          <QuickAction icon="sparkle" label={t('home.quick.tonight')} sub={t('home.quick.tonightSub')} accent wide onClick={() => onNav('recipes')} />
         </div>
       </div>
 
@@ -136,26 +139,26 @@ const StatusPill = ({ icon, label, tone }) => {
 };
 
 const ExpiringStrip = ({ expiring, onOpenItem, onSuggestRecipe }) => {
-  const { pal } = useLF();
+  const { pal, t } = useLF();
   return (
     <div style={{ padding: '4px 0 4px' }}>
       <div style={{ padding: '0 20px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 14 }}>⏳</span>
-          <div style={{ fontSize: 12, fontWeight: 700, color: pal.ink, letterSpacing: '0.01em' }}>Úsalos esta semana</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: pal.ink, letterSpacing: '0.01em' }}>{t('home.useThisWeek')}</div>
         </div>
         <button onClick={onSuggestRecipe} style={{
           background: 'transparent', border: 'none', color: pal.primary,
           fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0,
-        }}>Recetas →</button>
+        }}>{t('home.recipesLink')}</button>
       </div>
       <div style={{ display: 'flex', gap: 8, padding: '0 20px 4px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {expiring.map((it) => {
           const exp = expiryStatus(it);
           const urgent = exp.urgent;
-          const label = exp.days != null && exp.days <= 0 ? 'caducado'
-            : exp.days === 1 ? 'mañana'
-            : `${exp.days} días`;
+          const label = exp.days != null && exp.days <= 0 ? t('domain.expiry.expired')
+            : exp.days === 1 ? t('domain.expiry.tomorrow')
+            : t('domain.expiry.days', { n: exp.days });
           return (
             <button key={it.id} onClick={() => onOpenItem(it)} style={{
               flexShrink: 0, width: 96, padding: 10,
@@ -195,7 +198,7 @@ const Locations = ({ locations, onOpen }) => (
 );
 
 const FridgeDoor = ({ loc, onClick, short }) => {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   return (
     <button onClick={onClick} style={{
       height: short ? 74 : 156, width: '100%', borderRadius: 16,
@@ -220,7 +223,7 @@ const FridgeDoor = ({ loc, onClick, short }) => {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
         <span style={{ fontSize: 12, color: pal.ink, opacity: 0.75, fontWeight: 500 }}>
-          {loc.count} items{loc.expiring > 0 && ` · ${loc.expiring} urgen`}
+          {t('common.items', { n: loc.count })}{loc.expiring > 0 && ` · ${t('home.urgent', { n: loc.expiring })}`}
         </span>
         <LFIcon name="arrowRight" size={16} color={pal.ink} />
       </div>
@@ -229,7 +232,7 @@ const FridgeDoor = ({ loc, onClick, short }) => {
 };
 
 const PantryDoor = ({ loc, onClick }) => {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   return (
     <button onClick={onClick} style={{
       width: '100%', height: 236, borderRadius: 16,
@@ -255,7 +258,7 @@ const PantryDoor = ({ loc, onClick }) => {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
         <span style={{ fontSize: 12, color: pal.ink, opacity: 0.75, fontWeight: 500 }}>
-          {loc.count} items{loc.expiring > 0 && ` · ${loc.expiring} urgen`}
+          {t('common.items', { n: loc.count })}{loc.expiring > 0 && ` · ${t('home.urgent', { n: loc.expiring })}`}
         </span>
         <LFIcon name="arrowRight" size={16} color={pal.ink} />
       </div>

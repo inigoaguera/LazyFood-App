@@ -1,0 +1,81 @@
+// Namespace 'profile'. Mismas claves en es/ y en/ — ver src/i18n/index.js.
+// Cubre Profile.jsx y los nombres de paletas y tipografías (tokens/).
+export default {
+  title: 'Perfil',
+  section: {
+    account: 'Mi cuenta',
+    house: 'Esta casa',
+    categories: 'Categorías de la casa',
+    theme: 'Tema (tuyo, no compartido)',
+    session: 'Sesión',
+  },
+  you: '(tú)',
+  members: 'Miembros ({n})',
+  kick: 'Expulsar',
+  invite: 'Invitar',
+  switchHouse: 'Cambiar casa',
+  importSample: 'Importar datos de prueba',
+  leave: 'Salir de "{name}"',
+  deleteHouse: '🗑 Borrar casa para siempre',
+  logout: 'Cerrar sesión',
+  houseUpdated: 'Casa actualizada',
+  left: 'Saliste de la casa',
+  kicked: '{who} expulsado',
+  houseDeleted: 'Casa borrada',
+  confirm: {
+    leave: '¿Salir de "{name}"? Perderás el acceso a esta casa.',
+    kick: '¿Expulsar a {who} de "{name}"?',
+    deleteHouse: '¿Borrar "{name}" PARA SIEMPRE? Se perderán todos los items, recetas, lista, gastos y menú. Esta acción no se puede deshacer.',
+    deleteHouseLast: 'Última oportunidad. ¿Seguro?',
+    logout: '¿Cerrar sesión? Tendrás que volver a meter tu email.',
+  },
+  import: {
+    confirm: '¿Importar {items} + {recipes} + {shopping} a "{name}"?\n\nSe AÑADEN a lo que ya tengas (no reemplaza). Si quieres empezar limpio, borra primero los items existentes.',
+    recipes_one: '{n} receta',
+    recipes_other: '{n} recetas',
+    shopping_one: '{n} cosa de la lista',
+    shopping_other: '{n} cosas de la lista',
+    done_one: 'Importado {n} elemento 🎉',
+    done_other: 'Importados {n} elementos 🎉',
+  },
+  user: {
+    name: 'Tu nombre',
+    namePlaceholder: 'Iñigo',
+    avatar: 'Avatar',
+  },
+  houseEditor: {
+    nameOwner: 'Nombre de la casa',
+    nameMember: 'Nombre (sólo el owner puede cambiarlo)',
+    color: 'Color',
+    budget: 'Presupuesto mensual (€)',
+  },
+  budget: {
+    set: 'Presupuesto: {budget}€/mes',
+    unset: 'Presupuesto: sin definir',
+  },
+  categories: {
+    hint: 'Las 12 categorías por defecto están siempre disponibles. Aquí puedes añadir las tuyas (postres, bebés, salsas caseras…) y las verán todos los miembros.',
+    add: '+ Añadir categoría',
+    namePlaceholder: 'Nombre (postres, bebés…)',
+    emojiPlaceholder: 'Emoji (opcional)',
+    color: 'Color',
+    created: 'Categoría "{name}" creada',
+    confirmDelete: '¿Borrar la categoría "{name}"? Los items que la usan se quedan sin categoría.',
+    deleted: 'Categoría eliminada',
+  },
+  theme: {
+    palette: 'Paleta',
+    font: 'Tipografía',
+  },
+  // Nombres de las paletas (tokens/palettes.js) y las tipografías (tokens/fonts.js).
+  palette: {
+    huerto: 'Huerto',
+    menta: 'Menta',
+    terracota: 'Terracota',
+  },
+  font: {
+    playful: 'Playful',
+    clean: 'Clean',
+    rounded: 'Rounded',
+  },
+};

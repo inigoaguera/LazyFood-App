@@ -94,10 +94,20 @@ export async function cacheDelete(table, hid, id) {
   }
 }
 export async function cacheClearHousehold(hid) {
-  const tables = ['items', 'recipes', 'shopping', 'expenses', 'menuPlan', 'recipeDetails'];
+  // `categories` faltaba en la lista y se quedaba huérfana.
+  const tables = ['items', 'recipes', 'shopping', 'expenses', 'recipeDetails', 'categories'];
   for (const t of tables) {
     await db.table(t).where({ householdId: hid }).delete();
   }
+  // menuPlan tiene clave compuesta [householdId+slot] y no un índice suelto por
+  // householdId, así que se filtra a mano por clave primaria.
+  const slots = await db.menuPlan.where('[householdId+slot]')
+    .between([hid, Dexie.minKey], [hid, Dexie.maxKey])
+    .primaryKeys();
+  if (slots.length) await db.menuPlan.bulkDelete(slots);
+  await db.settings.delete(`lastSync:${hid}`);
+  await db.settings.delete(`aiRecipes:${hid}`);
+  await db.settings.delete(`antojos:${hid}`);
 }
 
 // ─── Quita la antigua ensureSeed: ya no sembramos local. ─────────────
@@ -137,4 +147,16 @@ export const RECIPE_USES_EXPIRING_BY_NAME = {
   'Salmón teriyaki':          [],
   'Paella mixta':             ['Pechuga de pollo'],
   'Guacamole':                [],
+  // English seed recipes (src/data/seed.en.js) → English seed item names.
+  // 'Guacamole' is identical in both languages and already covered above.
+  "Mum's pasta":              ['Cherry tomatoes'],
+  'Easy Spanish omelette':    ['Eggs'],
+  'Caprese salad':            ['Cherry tomatoes'],
+  'Tuna & tomato sarnie':     ['Cherry tomatoes'],
+  'Scrambled eggs':           ['Eggs'],
+  'Avocado toast':            [],
+  'Prawn risotto':            ['Chicken breast'],
+  'Thai chicken curry':       ['Chicken breast'],
+  'Teriyaki salmon':          [],
+  'Mixed paella':             ['Chicken breast'],
 };

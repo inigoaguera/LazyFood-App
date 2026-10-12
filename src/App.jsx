@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { LFCtx } from './components/ctx.js';
 import { LF_PALETTES, LF_DENSITIES } from './tokens/palettes.js';
@@ -8,10 +8,13 @@ import { onUnauthorized } from './api/client.js';
 import { fetchMe, setCurrentHousehold, patchHousehold } from './api/session.js';
 import { syncHousehold, setupFocusSync } from './api/sync.js';
 import { getJwt } from './util/jwt.js';
+import { goBack, useBackLayers, useBackClose } from './util/nav.js';
 
 import { BottomNav, ToastHost } from './components/base.jsx';
 import DebugOverlay from './screens/DebugOverlay.jsx';
 import { isDebugActive } from './util/debug.js';
+import { t, setLang, normalizeLang, storedLang, detectLang, rememberLangLocally } from './i18n/index.js';
+import { syncLangToAccount, resetLangOnLogout, onEffectiveLangChange, readPending, markLangPending } from './i18n/switch.js';
 import Login from './screens/Login.jsx';
 import Verify from './screens/Verify.jsx';
 import HouseholdPicker from './screens/HouseholdPicker.jsx';
@@ -50,6 +53,10 @@ const AppStyles = ({ pal, fonts }) => (
   `}</style>
 );
 
+// Pantallas de la BottomNav: no se apilan entre sí, siempre vuelven a home.
+const ROOT_TABS = ['list', 'recipes', 'expenses'];
+const HOUSEHOLD_ROUTES = ['householdPicker', 'createHousehold', 'joinHousehold'];
+
 // Lee ?token y ?invite de la URL una sola vez en boot, los limpia para evitar replays.
 function readUrlParams() {
   const u = new URL(window.location.href);
@@ -63,12 +70,17 @@ function readUrlParams() {
   return { token, invite };
 }
 
+// Mientras IndexedDB no responde, settings vale esto (y settingsLoaded false).
+const NO_SETTINGS = {};
+
 export default function App() {
   // Settings cached in IndexedDB
-  const settings = useLiveQuery(async () => {
+  const settingsRaw = useLiveQuery(async () => {
     const all = await db.settings.toArray();
     return Object.fromEntries(all.map((s) => [s.key, s.value]));
-  }, [], {});
+  }, [], null);
+  const settingsLoaded = settingsRaw !== null;
+  const settings = settingsRaw || NO_SETTINGS;
 
   // ─── Auth state ──────────────────────────────────────────
   const me = settings.me || null;
@@ -85,13 +97,55 @@ export default function App() {
 
   useEffect(() => { lfEnsureFont(fontKey); }, [fontKey]);
 
+  // Idioma, por orden (ver el modelo en i18n/switch.js):
+  //   1. un cambio aún sin confirmar por el servidor (langPending),
+  //   2. el de tu cuenta (prefs.lang),
+  //   3. el elegido explícitamente en este móvil (settings.lang),
+  //   4. el último que se mostró en este móvil (localStorage; también sirve
+  //      para el primer pintado, antes de que responda IndexedDB),
+  //   5. el del sistema.
+  // Se fija aquí, en el render, para que los hijos ya pinten con él.
+  // El de la cuenta sólo cuenta con sesión: un /me que llega justo después de
+  // cerrarla puede dejar escrita la copia de `me`, y el login no debe salir en
+  // el idioma de una cuenta que ya no está.
+  const pendingLang = jwt ? (readPending(settings.langPending)?.lang || null) : null;
+  const accountLang = jwt ? normalizeLang(userPrefs.lang) : null;
+  const lang = setLang(
+    pendingLang || accountLang || normalizeLang(settings.lang) || storedLang() || detectLang()
+  );
+  // Nada se guarda hasta que IndexedDB ha respondido: el primer render sólo
+  // conoce localStorage o el idioma del sistema, que es una suposición.
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    rememberLangLocally(lang);
+    onEffectiveLangChange(lang);
+  }, [lang, settingsLoaded]);
+
+  // Sincronización con la cuenta (i18n/switch.js):
+  //   - Cuenta sin idioma (primer login o cuenta anterior a esta función): sólo
+  //     se le sube una elección EXPLÍCITA de este móvil (settings.lang). Sin
+  //     ella, cada móvil sigue con su idioma del sistema; así un móvil en inglés
+  //     no pasa a inglés la cuenta de alguien que siempre la usó en castellano.
+  //   - Hay un cambio pendiente: se (re)intenta subir con cada /me y con cada
+  //     cambio de la marca. syncLangToAccount va en serie y no hace nada si ya
+  //     no hay marca, así que llamarla de más es inofensivo.
+  const explicitLang = normalizeLang(settings.lang);
+  useEffect(() => {
+    if (!jwt || !me?.id || !me.prefs) return;
+    if (!pendingLang && !normalizeLang(me.prefs.lang) && explicitLang) {
+      markLangPending(explicitLang);
+      return;
+    }
+    if (pendingLang) syncLangToAccount();
+  }, [jwt, me, pendingLang, explicitLang]);
+
   const pal = LF_PALETTES[palette] || LF_PALETTES.huerto;
   const fonts = LF_FONTS[fontKey] || LF_FONTS.playful;
   const dens = LF_DENSITIES[densityKey] || LF_DENSITIES.regular;
   const ctx = useMemo(() => ({
-    pal, fonts, dens, settings,
+    pal, fonts, dens, settings, lang, t,
     me, currentHousehold, currentHouseholdMeta: myHouseholdMeta,
-  }), [pal, fonts, dens, settings, me, currentHousehold, myHouseholdMeta]);
+  }), [pal, fonts, dens, settings, lang, me, currentHousehold, myHouseholdMeta]);
 
   // ─── URL params (magic link / invite) ────────────────────
   const [urlParams] = useState(() => readUrlParams());
@@ -108,6 +162,7 @@ export default function App() {
     onUnauthorized(() => {
       setSetting('me', null);
       setSetting('currentHouseholdId', null);
+      resetLangOnLogout().catch(() => {});
     });
   }, []);
 
@@ -148,18 +203,41 @@ export default function App() {
     }
   }, [currentHousehold]);
 
-  useEffect(() => {
-    setupFocusSync(() => settings.currentHouseholdId || null);
-    // setup once
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // El listener se registra una sola vez, así que no puede leer `currentHousehold`
+  // directamente: capturaría el valor del primer render (cuando settings aún es {}
+  // porque IndexedDB no ha respondido) y el sync no dispararía nunca. Va por ref.
+  const hidRef = useRef(currentHousehold);
+  useEffect(() => { hidRef.current = currentHousehold; }, [currentHousehold]);
+
+  useEffect(() => setupFocusSync(() => hidRef.current), []);
 
   // ─── Routing dentro de la app ──────────────────────────
-  const [route, setRoute] = useState('home');
-  const [params, setParams] = useState({});
+  // Pila de pantallas en vez de una ruta suelta: es lo que permite que el back
+  // del sistema (Android) retroceda en vez de cerrar la PWA. Ver util/nav.js.
+  const [stack, setStack] = useState([{ route: 'home', params: {} }]);
+  const { route, params } = stack[stack.length - 1];
   const [modal, setModal] = useState(null);
   const [editItem, setEditItem] = useState(null);
-  const go = (r, p = {}) => { setRoute(r); setParams(p); };
+
+  const go = (r, p = {}, opts = {}) => setStack((s) => {
+    if (r === 'home') return [{ route: 'home', params: {} }];
+    // Las tabs de la BottomNav no se apilan entre sí: siempre cuelgan de home.
+    if (ROOT_TABS.includes(r)) return [{ route: 'home', params: {} }, { route: r, params: p }];
+    if (opts.replace) return [...s.slice(0, -1), { route: r, params: p }];
+    return [...s, { route: r, params: p }];
+  });
+
+  // El único que hace pop es el listener de popstate, así que el botón atrás de
+  // la app y el gesto nativo recorren exactamente el mismo camino.
+  const back = () => goBack();
+  useBackLayers(stack.length - 1, () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)));
+  useBackClose(!!modal, () => setModal(null));
+
+  // Si ya hay casa válida, las pantallas de alta de casa no pintan nada.
+  useEffect(() => {
+    if (HOUSEHOLD_ROUTES.includes(route) && currentHousehold
+      && myHouseholds.some((h) => h.id === currentHousehold)) go('home');
+  }, [route, currentHousehold, myHouseholds]);
 
   // ─── Render decisión: árbol auth → casa → app ───────────
   const screen = (() => {
@@ -183,7 +261,7 @@ export default function App() {
       return <div style={{
         height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
         color: pal.inkSoft, fontSize: 14,
-      }}>Cargando…</div>;
+      }}>{t('common.loading')}</div>;
     }
     // 4. ¿Hay datos legacy v1 sin importar y aún no tienes casas? → Wizard
     if (legacyChecked && hasLegacy && myHouseholds.length === 0 && route !== 'createHousehold' && route !== 'joinHousehold') {
@@ -196,10 +274,10 @@ export default function App() {
     const isValidHid = currentHousehold && myHouseholds.some((h) => h.id === currentHousehold);
     if (!isValidHid) {
       if (route === 'createHousehold') {
-        return <CreateHousehold onCreated={() => go('home')} onBack={() => go('householdPicker')} />;
+        return <CreateHousehold onCreated={() => go('home')} onBack={back} />;
       }
       if (route === 'joinHousehold') {
-        return <JoinHousehold onJoined={() => go('home')} onBack={() => go('householdPicker')} />;
+        return <JoinHousehold onJoined={() => go('home')} onBack={back} />;
       }
       return <HouseholdPicker
         onPick={() => go('home')}
@@ -222,22 +300,22 @@ export default function App() {
     // 6. App normal
     switch (route) {
       case 'home':       return <Home onOpenLocation={(loc) => go('list', { loc })} onNav={(t) => go(t)} onOpenRecipe={(id) => go('recipeDetail', { id })} onOpenChat={(prompt) => go('antojos', { prompt })} />;
-      case 'list':       return <Inventory initialLoc={params.loc || 'all'} onBack={() => go('home')} onEdit={(it) => { setEditItem(it); setModal('edit'); }} onAdd={() => { setEditItem(null); setModal('add'); }} />;
-      case 'recipes':    return <RecipeHub onBack={() => go('home')} onOpenRecipe={(id) => go('recipeDetail', { id })} onOpenChat={() => go('antojos')} />;
-      case 'recipeDetail': return <RecipeDetail recipeId={params.id} onBack={() => go('recipes')} onCooked={() => go('home')} />;
-      case 'antojos':    return <AntojosChat onClose={() => go('recipes')} onOpenRecipe={(id) => go('recipeDetail', { id })} initialPrompt={params.prompt} />;
-      case 'scan':       return <Scanner onBack={() => go('home')} onDone={() => go('list')} />;
-      case 'shopping':   return <Shopping onBack={() => go('home')} />;
-      case 'expenses':   return <Expenses onBack={() => go('home')} />;
-      case 'menu':       return <Menu onBack={() => go('home')} onOpenRecipe={(id) => go('recipeDetail', { id })} />;
-      case 'profile':    return <Profile onBack={() => go('home')}
+      case 'list':       return <Inventory initialLoc={params.loc || 'all'} onBack={back} onEdit={(it) => { setEditItem(it); setModal('edit'); }} onAdd={() => { setEditItem(null); setModal('add'); }} />;
+      case 'recipes':    return <RecipeHub onBack={back} onOpenRecipe={(id) => go('recipeDetail', { id })} onOpenChat={() => go('antojos')} />;
+      case 'recipeDetail': return <RecipeDetail recipeId={params.id} onBack={back} onCooked={() => go('home')} />;
+      case 'antojos':    return <AntojosChat onClose={back} onOpenRecipe={(id) => go('recipeDetail', { id })} initialPrompt={params.prompt} />;
+      case 'scan':       return <Scanner onBack={back} onDone={() => go('list')} />;
+      case 'shopping':   return <Shopping onBack={back} />;
+      case 'expenses':   return <Expenses onBack={back} />;
+      case 'menu':       return <Menu onBack={back} onOpenRecipe={(id) => go('recipeDetail', { id })} />;
+      case 'profile':    return <Profile onBack={back}
                               onSwitchHousehold={async () => { await setCurrentHousehold(null); go('home'); }}
                               onLogout={() => window.location.reload()} />;
-      // Si ya está en casa válida y por algún motivo entra a estas, redirige
+      // Si ya está en casa válida y por algún motivo entra a estas, el efecto
+      // de arriba redirige a home en el siguiente commit.
       case 'householdPicker':
       case 'createHousehold':
       case 'joinHousehold':
-        go('home');
         return null;
       default: return null;
     }

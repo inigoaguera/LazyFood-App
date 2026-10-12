@@ -6,9 +6,10 @@ import { Screen, Header, IconBtn, SwipeRow, toast } from '../components/base.jsx
 import { LF_CATEGORIES } from '../tokens/categories.js';
 import LFIcon from '../icons/LFIcon.jsx';
 import { create as resourceCreate, patch as resourcePatch, remove as resourceRemove } from '../api/resources.js';
+import { errMsg } from '../i18n/index.js';
 
 export default function Shopping({ onBack }) {
-  const { pal, currentHouseholdMeta } = useLF();
+  const { pal, currentHouseholdMeta, t } = useLF();
   const hid = currentHouseholdMeta?.id;
   const items = useLiveQuery(
     () => hid ? db.shopping.where({ householdId: hid }).toArray() : Promise.resolve([]),
@@ -23,28 +24,28 @@ export default function Shopping({ onBack }) {
 
   const toggle = async (it) => {
     try { await resourcePatch('shopping', hid, it.id, { checked: it.checked ? 0 : 1 }); }
-    catch (e) { toast(e?.message || 'Error', 'error'); }
+    catch (e) { toast(errMsg(e), 'error'); }
   };
   const changeCount = async (it, delta) => {
     const next = Math.max(1, (it.count || 1) + delta);
     if (next === (it.count || 1)) return;
     try { await resourcePatch('shopping', hid, it.id, { count: next }); haptic(); }
-    catch (e) { toast(e?.message || 'Error', 'error'); }
+    catch (e) { toast(errMsg(e), 'error'); }
   };
   const removeItem = async (it) => {
     try {
       await resourceRemove('shopping', hid, it.id);
-      toast(`${it.name} eliminado`);
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+      toast(t('shopping.removed', { name: it.name }));
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const clearCart = async () => {
     if (done.length === 0) return;
-    if (!confirm(`¿Vaciar el carro? Se eliminarán ${done.length} item${done.length === 1 ? '' : 's'} ya marcados.`)) return;
+    if (!confirm(t('shopping.confirmClear', { n: done.length }))) return;
     try {
       for (const it of done) await resourceRemove('shopping', hid, it.id);
-      toast(`Carro vaciado · ${done.length} eliminados`);
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+      toast(t('shopping.cleared', { n: done.length }));
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const addItem = async () => {
@@ -54,34 +55,34 @@ export default function Shopping({ onBack }) {
       await resourceCreate('shopping', hid, { name, qty: '', cat: null, checked: 0, auto: 0, count: 1 });
       setDraft('');
       setAdding(false);
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   return (
     <Screen>
-      <Header big title="Lista de la compra" subtitle={`${items.filter((i) => !i.checked).length} pendientes`}
+      <Header big title={t('shopping.title')} subtitle={t('shopping.pending', { n: items.filter((i) => !i.checked).length })}
         left={<IconBtn icon="chevronLeft" onClick={onBack} />}
         right={<IconBtn icon="more" tone="soft" />} />
 
       <div style={{ padding: '0 20px 6px', fontSize: 11, color: pal.inkSoft, textAlign: 'right' }}>
-        ← desliza para eliminar
+        {t('shopping.swipeHint')}
       </div>
 
       {auto.length > 0 && (
-        <GroupSection title="Auto-añadidos" subtitle="Faltan para tus recetas" icon="sparkle">
+        <GroupSection title={t('shopping.auto.title')} subtitle={t('shopping.auto.sub')} icon="sparkle">
           {auto.map((i) => <ShopRow key={i.id} item={i} hid={hid}
             onToggle={toggle} onCount={changeCount} onRemove={removeItem} />)}
         </GroupSection>
       )}
       {manual.length > 0 && (
-        <GroupSection title="Tu lista" subtitle="Añadido por ti">
+        <GroupSection title={t('shopping.manual.title')} subtitle={t('shopping.manual.sub')}>
           {manual.map((i) => <ShopRow key={i.id} item={i} hid={hid}
             onToggle={toggle} onCount={changeCount} onRemove={removeItem} />)}
         </GroupSection>
       )}
       {done.length > 0 && (
-        <GroupSection title="Ya en el carro" subtitle={`${done.length} items`}
-          action={{ label: 'Vaciar carro', onClick: clearCart }}>
+        <GroupSection title={t('shopping.done.title')} subtitle={t('common.items', { n: done.length })}
+          action={{ label: t('shopping.done.clear'), onClick: clearCart }}>
           {done.map((i) => <ShopRow key={i.id} item={i} hid={hid}
             onToggle={toggle} onCount={changeCount} onRemove={removeItem} />)}
         </GroupSection>
@@ -96,12 +97,12 @@ export default function Shopping({ onBack }) {
           }}>
             <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') addItem(); if (e.key === 'Escape') setAdding(false); }}
-              placeholder="Aceitunas, papel…"
+              placeholder={t('shopping.placeholder')}
               style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 14, color: pal.ink }} />
             <button onClick={addItem} style={{
               padding: '6px 12px', background: pal.primary, color: '#fff',
               border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            }}>Añadir</button>
+            }}>{t('common.add')}</button>
           </div>
         ) : (
           <button onClick={() => setAdding(true)} style={{
@@ -111,7 +112,7 @@ export default function Shopping({ onBack }) {
             color: pal.inkSoft, cursor: 'pointer', fontSize: 14, fontWeight: 600,
           }}>
             <LFIcon name="plus" size={18} />
-            Añadir algo a la lista
+            {t('shopping.addSomething')}
           </button>
         )}
       </div>
@@ -141,10 +142,10 @@ const GroupSection = ({ title, subtitle, icon, action, children }) => {
 };
 
 const ShopRow = ({ item, hid, onToggle, onCount, onRemove }) => {
-  const { pal } = useLF();
+  const { pal, t } = useLF();
   return (
     <SwipeRow height={56} actions={[
-      { icon: 'trash', label: 'Eliminar', bg: pal.danger, onClick: () => onRemove(item) },
+      { icon: 'trash', label: t('common.remove'), bg: pal.danger, onClick: () => onRemove(item) },
     ]}>
       <ShopItem item={item} onToggle={onToggle} onCount={onCount} />
     </SwipeRow>
@@ -152,7 +153,7 @@ const ShopRow = ({ item, hid, onToggle, onCount, onRemove }) => {
 };
 
 const ShopItem = ({ item, onToggle, onCount }) => {
-  const { pal } = useLF();
+  const { pal, t } = useLF();
   const cat = LF_CATEGORIES.find((c) => c.id === item.cat);
   const checked = !!item.checked;
   const count = item.count || 1;
@@ -191,7 +192,7 @@ const ShopItem = ({ item, onToggle, onCount }) => {
         <span style={{
           fontSize: 9, fontWeight: 700, padding: '2px 6px',
           background: pal.accentSoft, color: pal.ink, borderRadius: 8,
-        }}>IA</span>
+        }}>{t('shopping.aiBadge')}</span>
       )}
       {!checked && (
         <div style={{

@@ -1,118 +1,89 @@
 import React, { useEffect, useState } from 'react';
 import { useLF } from '../components/ctx.js';
-import { Button, toast } from '../components/base.jsx';
-import { LF_CATEGORIES } from '../tokens/categories.js';
+import { errMsg } from '../i18n/index.js';
+import { expenseCatLabel, unitLabel } from '../i18n/labels.js';
+import { toast, UnitInput } from '../components/base.jsx';
 import {
   create as resourceCreate, patch as resourcePatch, remove as resourceRemove,
 } from '../api/resources.js';
 import { syncHousehold } from '../api/sync.js';
 import { localISODate } from '../util/date.js';
+import { useCategories } from '../util/categories.js';
+import { expenseLines, makeLine, linesTotal } from '../util/expenseLines.js';
 
-// Modal full-screen para añadir / editar / borrar un gasto.
-// Los items son entidades reales del inventario vinculadas con expense_id.
-// Editar/añadir/borrar items aquí afecta al inventario directamente.
+// Modal full-screen para añadir / editar / borrar una compra.
+//
+// Las líneas de productos son el REGISTRO de la compra (snapshot guardado en el
+// propio gasto), no el inventario. Editarlas aquí no añade, cambia ni borra nada
+// de la nevera: el ticket queda como documento histórico aunque los alimentos ya
+// se hayan consumido.
 export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, hid, onClose, onSaved }) {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
+  const allCategories = useCategories(hid);
   const editing = !!expense?.id;
   const [date, setDate] = useState(expense?.date || defaultDate || localISODate());
   const [store, setStore] = useState(expense?.store || '');
   const [amount, setAmount] = useState(expense?.amount != null ? String(expense.amount) : '');
   const [saved, setSaved] = useState(expense?.savedOnDiscounts != null ? String(expense.savedOnDiscounts) : '');
-  // Mezclamos items existentes (con id real) y nuevos (sin id, _new flag)
-  const [items, setItems] = useState(() => linkedItems.map((it) => ({ ...it })));
+  const [lines, setLines] = useState(() => expenseLines(expense, linkedItems).map((l) => makeLine(l)));
   const [busy, setBusy] = useState(false);
 
-  // Si recibo nuevos items vinculados (porque el sync llegó después), los reflejo.
+  // Gastos antiguos (anteriores al snapshot) sólo tienen los items vivos vinculados.
+  // Si llegan por sync después de abrir el editor, los reflejamos. Al guardar
+  // quedan congelados en el propio gasto y ya no dependen del inventario.
+  const legacy = !Array.isArray(expense?.items);
   useEffect(() => {
-    if (linkedItems && linkedItems.length && items.every((i) => i._new)) {
-      setItems(linkedItems.map((it) => ({ ...it })));
+    if (legacy && lines.length === 0 && linkedItems.length > 0) {
+      setLines(linkedItems.map((it) => makeLine(it)));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedItems.length]);
 
-  const itemsSum = items.reduce((a, b) => a + (Number(b.price) || 0), 0);
+  const itemsSum = linesTotal(lines);
   const total = amount !== '' ? Number(amount) : itemsSum;
 
-  const addItem = () => setItems((xs) => [...xs, {
-    _new: true, name: '', emoji: '🛒', cat: 'conserva', loc: 'pantry',
-    type: 'discrete', qty: 1, unit: 'uds', expires: 14, price: null,
-  }]);
-  const updateItem = (i, patch) => setItems((xs) => xs.map((it, idx) => idx === i ? { ...it, ...patch } : it));
-  const markRemoved = (i) => setItems((xs) => xs.map((it, idx) => idx === i ? { ...it, _delete: true } : it));
+  const addLine = () => setLines((xs) => [...xs, makeLine({ name: '', cat: 'otros', qty: 1, unit: 'uds' })]);
+  const updateLine = (id, patch) => setLines((xs) => xs.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  const removeLine = (id) => setLines((xs) => xs.filter((l) => l.id !== id));
 
   const save = async () => {
-    if (!store.trim()) { toast('Pon dónde compraste', 'error'); return; }
-    if (!total || Number.isNaN(total)) { toast('Pon un total válido', 'error'); return; }
+    if (!store.trim()) { toast(t('expenses.editor.storeRequired'), 'error'); return; }
+    // 0 es un total válido: una compra pagada entera con vale o puntos. El
+    // `!total` de antes lo rechazaba junto con el vacío.
+    if (!Number.isFinite(total) || total < 0) { toast(t('expenses.editor.totalInvalid'), 'error'); return; }
     setBusy(true);
     try {
-      const expensePayload = {
+      const payload = {
         date, store: store.trim(),
         amount: Number(total),
         cat: 'super',
         savedOnDiscounts: saved === '' ? null : Number(saved),
+        // Siempre mandamos las líneas: es lo que conserva el desglose para siempre.
+        items: lines.filter((l) => l.name?.trim()).map((l) => makeLine(l)),
       };
-      let expenseId = expense?.id;
       if (editing) {
-        await resourcePatch('expenses', hid, expense.id, expensePayload);
+        await resourcePatch('expenses', hid, expense.id, payload);
       } else {
-        const created = await resourceCreate('expenses', hid, expensePayload);
-        expenseId = created?.id;
+        await resourceCreate('expenses', hid, payload);
       }
-
-      // Sincronizar items vinculados
-      for (const it of items) {
-        if (it._delete) {
-          if (it.id) await resourceRemove('items', hid, it.id);
-          continue;
-        }
-        if (!it.name?.trim()) continue;
-        const type = it.type === 'continuous' ? 'continuous' : 'discrete';
-        const itemPayload = {
-          name: it.name.trim(),
-          emoji: it.emoji || '🛒',
-          cat: it.cat || 'conserva',
-          loc: it.loc || 'pantry',
-          type,
-          shape: type === 'continuous' ? (it.shape || 'bottle') : null,
-          qty: it.qty != null ? Number(it.qty) : 1,
-          fill: type === 'continuous' ? (it.fill ?? 100) : null,
-          unit: it.unit || (type === 'continuous' ? 'L' : 'uds'),
-          expires: it.expires == null || it.expires === '' ? null : Number(it.expires),
-          price: it.price != null && it.price !== '' ? Number(it.price) : null,
-          expenseId,
-        };
-        if (it._new) {
-          await resourceCreate('items', hid, itemPayload);
-        } else if (it.id) {
-          // Sólo enviamos los campos modificables (omitimos householdId, etc.)
-          await resourcePatch('items', hid, it.id, itemPayload);
-        }
-      }
-
-      toast(editing ? 'Cambios guardados' : 'Gasto añadido');
+      toast(editing ? t('common.changesSaved') : t('expenses.editor.added'));
       await syncHousehold(hid);
       onSaved?.();
     } catch (e) {
-      toast(e?.message || 'Error', 'error');
+      toast(errMsg(e), 'error');
     } finally { setBusy(false); }
   };
 
   const handleDelete = async () => {
     if (!editing) return;
-    if (!confirm('¿Borrar este gasto? Los items vinculados quedan en el inventario.')) return;
+    if (!confirm(t('expenses.editor.confirmDelete'))) return;
     try {
       await resourceRemove('expenses', hid, expense.id);
-      // Desvinculamos los items pero los dejamos en inventario
-      for (const it of linkedItems) {
-        try { await resourcePatch('items', hid, it.id, { expenseId: null }); } catch { /* ignore */ }
-      }
-      toast('Gasto borrado');
+      toast(t('expenses.editor.deleted'));
       await syncHousehold(hid);
       onSaved?.();
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
-
-  const visible = items.filter((i) => !i._delete);
 
   return (
     <div style={{
@@ -125,44 +96,44 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
         padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         borderBottom: `0.5px solid ${pal.line}`,
       }}>
-        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer' }}>Cancelar</button>
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer' }}>{t('common.cancel')}</button>
         <div style={{ fontFamily: fonts.display, fontSize: 17, fontWeight: 700, color: pal.ink }}>
-          {editing ? 'Editar compra' : 'Nueva compra'}
+          {editing ? t('expenses.editor.titleEdit') : t('expenses.editor.titleNew')}
         </div>
         <button onClick={save} disabled={busy} style={{
           background: 'transparent', border: 'none',
           color: pal.primary, fontSize: 14, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
-        }}>{busy ? '…' : 'Guardar'}</button>
+        }}>{busy ? '…' : t('common.save')}</button>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{ flex: 1 }}>
-            <Field label="Fecha">
+            <Field label={t('expenses.editor.date')}>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle(pal)} />
             </Field>
           </div>
           <div style={{ flex: 2 }}>
-            <Field label="Supermercado">
+            <Field label={t('expenses.editor.store')}>
               <input value={store} onChange={(e) => setStore(e.target.value)}
-                placeholder="Mercadona, Lidl…" style={inputStyle(pal)} />
+                placeholder={t('expenses.editor.storePlaceholder')} style={inputStyle(pal)} />
             </Field>
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{ flex: 1 }}>
-            <Field label="Total (€)">
+            <Field label={t('expenses.editor.total')}>
               <input type="number" inputMode="decimal" value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder={itemsSum.toFixed(2)} style={inputStyle(pal)} />
               <div style={{ fontSize: 10, color: pal.inkFaint, marginTop: 4 }}>
-                Suma items: {itemsSum.toFixed(2)}€
+                {t('expenses.editor.itemsSum', { amount: itemsSum.toFixed(2) })}
               </div>
             </Field>
           </div>
           <div style={{ flex: 1 }}>
-            <Field label="Ahorro ofertas (€)">
+            <Field label={t('expenses.editor.savedOnOffers')}>
               <input type="number" inputMode="decimal" value={saved}
                 onChange={(e) => setSaved(e.target.value)}
                 placeholder="0" style={inputStyle(pal)} />
@@ -177,31 +148,39 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
         }}>
           <span style={{ fontSize: 20 }}>📷</span>
           <div style={{ flex: 1, fontSize: 11, color: pal.inkSoft, lineHeight: 1.4 }}>
-            La foto del ticket se podrá guardar en cuanto activemos R2 (próximamente).
+            {t('expenses.editor.receiptPhoto')}
           </div>
         </div>
 
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <Label>Productos comprados ({visible.length})</Label>
-            <button onClick={addItem} style={{
+            <Label>{t('expenses.editor.productsBought', { n: lines.length })}</Label>
+            <button onClick={addLine} style={{
               background: pal.primarySoft, color: pal.primary,
               border: 'none', borderRadius: 10, padding: '6px 12px',
               fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>+ Añadir</button>
+            }}>{t('expenses.editor.add')}</button>
           </div>
-          <div style={{ fontSize: 11, color: pal.inkFaint, marginBottom: 8 }}>
-            Estos son los items que entraron en tu despensa con esta compra. Edítalos también para cambiar tu inventario.
+          <div style={{ fontSize: 11, color: pal.inkFaint, marginBottom: 8, lineHeight: 1.4 }}>
+            {t('expenses.editor.breakdownNote')}
           </div>
+          {legacy && lines.length > 0 && (
+            <div style={{
+              fontSize: 11, color: pal.inkSoft, marginBottom: 8, lineHeight: 1.4,
+              background: pal.primarySoft, borderRadius: 10, padding: 10,
+            }}>
+              {t('expenses.editor.legacyNote')}
+            </div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {visible.map((it, idx) => (
-              <ItemEditor key={it.id || idx} item={it} pal={pal}
-                onChange={(patch) => updateItem(items.indexOf(it), patch)}
-                onRemove={() => markRemoved(items.indexOf(it))} />
+            {lines.map((l) => (
+              <LineEditor key={l.id} line={l} pal={pal} allCategories={allCategories}
+                onChange={(patch) => updateLine(l.id, patch)}
+                onRemove={() => removeLine(l.id)} />
             ))}
-            {visible.length === 0 && (
+            {lines.length === 0 && (
               <div style={{ padding: 14, fontSize: 12, color: pal.inkFaint, textAlign: 'center' }}>
-                Sin productos. Toca "Añadir" o deja sólo el total.
+                {t('expenses.editor.noProducts')}
               </div>
             )}
           </div>
@@ -213,7 +192,7 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
             background: pal.dangerSoft, border: 'none', borderRadius: 12,
             color: pal.danger, fontSize: 13, fontWeight: 700, cursor: 'pointer',
           }}>
-            🗑 Borrar este gasto
+            {t('expenses.editor.deleteBtn')}
           </button>
         )}
       </div>
@@ -221,8 +200,11 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
   );
 }
 
-const ItemEditor = ({ item, pal, onChange, onRemove }) => {
-  const [open, setOpen] = useState(!!item._new);
+const LineEditor = ({ line, pal, allCategories, onChange, onRemove }) => {
+  const { t } = useLF();
+  const [open, setOpen] = useState(!line.name);
+  const catLabel = allCategories.find((c) => c.id === line.cat)?.label
+    || (line.cat === 'otros' ? expenseCatLabel('otros') : line.cat);
   return (
     <div style={{
       background: pal.surface, borderRadius: 10, border: `0.5px solid ${pal.line}`, overflow: 'hidden',
@@ -230,13 +212,13 @@ const ItemEditor = ({ item, pal, onChange, onRemove }) => {
       <div onClick={() => setOpen((x) => !x)} style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: 10, cursor: 'pointer',
       }}>
-        <span style={{ fontSize: 20, width: 28, textAlign: 'center' }}>{item.emoji || '🛒'}</span>
+        <span style={{ fontSize: 20, width: 28, textAlign: 'center' }}>{line.emoji || '🛒'}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: pal.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name || 'Sin nombre'}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: pal.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{line.name || t('common.noName')}</div>
           <div style={{ fontSize: 11, color: pal.inkSoft }}>
-            {item.qty || 1} {item.unit || 'uds'}
-            {item.price != null ? ` · ${Number(item.price).toFixed(2)}€` : ''}
-            {item.cat ? ` · ${LF_CATEGORIES.find((c) => c.id === item.cat)?.label || item.cat}` : ''}
+            {line.qty || 1} {unitLabel(line.unit || 'uds')}
+            {line.price != null ? ` · ${Number(line.price).toFixed(2)}€` : ''}
+            {catLabel ? ` · ${catLabel}` : ''}
           </div>
         </div>
         <button onClick={(e) => { e.stopPropagation(); onRemove(); }} style={{
@@ -247,87 +229,43 @@ const ItemEditor = ({ item, pal, onChange, onRemove }) => {
       {open && (
         <div style={{ padding: '0 10px 10px', borderTop: `0.5px solid ${pal.line}` }}>
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            <input value={item.emoji || ''} onChange={(e) => onChange({ emoji: e.target.value })}
+            <input value={line.emoji || ''} onChange={(e) => onChange({ emoji: e.target.value })}
               style={{ width: 44, padding: 8, fontSize: 18, textAlign: 'center', border: 'none', background: pal.bg, borderRadius: 8 }} />
-            <input value={item.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="Producto"
+            <input value={line.name} onChange={(e) => onChange({ name: e.target.value })} placeholder={t('expenses.editor.productPlaceholder')}
               style={{ flex: 1, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8 }} />
           </div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            <TypeBtn pal={pal} active={item.type !== 'continuous'} onClick={() => onChange({ type: 'discrete', shape: null, unit: 'uds', fill: null })}>
-              Discreto
-            </TypeBtn>
-            <TypeBtn pal={pal} active={item.type === 'continuous'} onClick={() => onChange({ type: 'continuous', shape: item.shape || 'bottle', unit: item.unit && ['L','ml','kg','g'].includes(item.unit) ? item.unit : 'L', fill: 100 })}>
-              Continuo
-            </TypeBtn>
-          </div>
-          {item.type === 'continuous' && (
-            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              {[{ id: 'bottle', label: '🍶 Botella' }, { id: 'jar', label: '🫙 Tarro' }, { id: 'sack', label: '🛍️ Saco' }].map((s) => (
-                <TypeBtn key={s.id} pal={pal} active={item.shape === s.id} onClick={() => onChange({ shape: s.id })}>
-                  {s.label}
-                </TypeBtn>
-              ))}
-            </div>
-          )}
           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-            <input type="number" inputMode="decimal" value={item.qty || ''}
-              onChange={(e) => onChange({ qty: Number(e.target.value) || 1 })}
+            <input type="number" inputMode="decimal" value={line.qty ?? ''}
+              onChange={(e) => onChange({ qty: e.target.value === '' ? 1 : Number(e.target.value) })}
               placeholder="1"
               style={{ width: 60, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8, textAlign: 'center' }} />
-            <select value={item.unit || (item.type === 'continuous' ? 'L' : 'uds')} onChange={(e) => onChange({ unit: e.target.value })}
-              style={{ width: 80, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8 }}>
-              {item.type === 'continuous'
-                ? ['L', 'ml', 'kg', 'g'].map((u) => <option key={u} value={u}>{u}</option>)
-                : ['uds', 'latas', 'paquetes'].map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
+            {/* Se enseña la etiqueta (pcs/uds) y se guarda la clave: escribir "tins" guarda "latas". */}
+            <UnitInput value={line.unit || ''} onChange={(unit) => onChange({ unit })}
+              placeholder={unitLabel('uds')}
+              style={{ width: 80, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8, textAlign: 'center' }} />
             <div style={{
               flex: 1, display: 'flex', alignItems: 'center',
               background: pal.bg, borderRadius: 8, paddingRight: 8,
             }}>
-              <input type="number" inputMode="decimal" value={item.price ?? ''}
+              <input type="number" inputMode="decimal" value={line.price ?? ''}
                 onChange={(e) => onChange({ price: e.target.value === '' ? null : Number(e.target.value) })}
                 placeholder="0.00"
                 style={{ flex: 1, padding: 8, fontSize: 13, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right' }} />
               <span style={{ fontSize: 13, color: pal.inkSoft, fontWeight: 600 }}>€</span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-            <select value={item.cat || 'conserva'} onChange={(e) => onChange({ cat: e.target.value })}
-              style={{ flex: 1, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8 }}>
-              {LF_CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          <div style={{ marginTop: 6 }}>
+            <select value={line.cat || 'otros'} onChange={(e) => onChange({ cat: e.target.value })}
+              style={{ width: '100%', padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8 }}>
+              {allCategories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              <option value="otros">{expenseCatLabel('otros')}</option>
             </select>
-            <select value={item.loc || 'pantry'} onChange={(e) => onChange({ loc: e.target.value })}
-              style={{ flex: 1, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8 }}>
-              <option value="fridge">Nevera</option>
-              <option value="freezer">Congelador</option>
-              <option value="pantry">Despensa</option>
-            </select>
-          </div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
-            <span style={{ fontSize: 11, color: pal.inkSoft, flex: 1 }}>
-              Caduca en (días)
-              {item.expires == null && <span style={{ marginLeft: 6, color: pal.inkFaint, fontStyle: 'italic' }}>— sin caducidad</span>}
-            </span>
-            <input type="number" inputMode="numeric" value={item.expires ?? ''}
-              onChange={(e) => onChange({ expires: e.target.value === '' ? null : Number(e.target.value) })}
-              placeholder="—"
-              style={{ width: 80, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8, textAlign: 'right' }} />
           </div>
         </div>
       )}
     </div>
   );
 };
-
-const TypeBtn = ({ pal, active, onClick, children }) => (
-  <button onClick={onClick} style={{
-    flex: 1, padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-    background: active ? pal.ink : pal.bg,
-    color: active ? pal.bg : pal.inkSoft,
-    border: `0.5px solid ${active ? pal.ink : pal.line}`,
-    fontSize: 11, fontWeight: 600,
-  }}>{children}</button>
-);
 
 const Field = ({ label, children }) => (
   <div style={{ marginBottom: 14 }}>

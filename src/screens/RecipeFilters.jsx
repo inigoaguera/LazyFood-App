@@ -1,19 +1,23 @@
 import React, { useState, useMemo } from 'react';
+import { namesMatch } from '../util/stock.js';
 import { useLF } from '../components/ctx.js';
+import { t } from '../i18n/index.js';
 
 // Estado tipo: { time: 30, tools: 2, available: true, ingredients: ['tomate', 'pollo'] }
 
+// Los ids son los valores que se comparan; la etiqueta se traduce al pintar
+// (labelKey), no aquí, para no congelar el idioma en el import.
 export const FILTER_DEFS = {
   time: [
-    { id: 15, label: '≤15 min' },
-    { id: 30, label: '≤30 min' },
-    { id: 60, label: '≤1h' },
-    { id: 9999, label: '+1h' },
+    { id: 15, labelKey: 'recipes.filters.time15' },
+    { id: 30, labelKey: 'recipes.filters.time30' },
+    { id: 60, labelKey: 'recipes.filters.time60' },
+    { id: 9999, labelKey: 'recipes.filters.timeMore' },
   ],
   tools: [
-    { id: 2, label: '≤2 cacharros' },
-    { id: 4, label: '3-4 cacharros' },
-    { id: 99, label: '5+ cacharros' },
+    { id: 2, labelKey: 'recipes.filters.tools2' },
+    { id: 4, labelKey: 'recipes.filters.tools4' },
+    { id: 99, labelKey: 'recipes.filters.tools99' },
   ],
 };
 
@@ -29,10 +33,10 @@ export function applyFilters(recipes, filters, { stockByName, detailsByName } = 
       }
     }
     if (filters.tools != null) {
-      const t = r.effort || 0;
-      if (filters.tools === 2 && t > 2) return false;
-      if (filters.tools === 4 && (t < 3 || t > 4)) return false;
-      if (filters.tools === 99 && t < 5) return false;
+      const effort = r.effort || 0;
+      if (filters.tools === 2 && effort > 2) return false;
+      if (filters.tools === 4 && (effort < 3 || effort > 4)) return false;
+      if (filters.tools === 99 && effort < 5) return false;
     }
     if (filters.available) {
       const stock = stockByName?.(r);
@@ -40,11 +44,9 @@ export function applyFilters(recipes, filters, { stockByName, detailsByName } = 
     }
     if (filters.ingredients?.length && detailsByName) {
       const det = detailsByName.get(r.name);
-      const ingNames = (det?.ingredients || []).map((i) => (i.name || '').toLowerCase());
-      const allMatch = filters.ingredients.every((wanted) => {
-        const w = wanted.toLowerCase();
-        return ingNames.some((n) => n.includes(w) || w.includes(n.split(' ')[0]));
-      });
+      // Mismo emparejado por nombre que el stock y el cocinar (util/stock.js).
+      const ingNames = (det?.ingredients || []).map((i) => i.name || '');
+      const allMatch = filters.ingredients.every((wanted) => ingNames.some((n) => namesMatch(n, wanted)));
       if (!allMatch) return false;
     }
     return true;
@@ -81,44 +83,44 @@ export default function RecipeFilters({ filters, inventory = [], onChange, onClo
           <div style={{ width: 40, height: 4, borderRadius: 2, background: pal.lineStrong }}/>
         </div>
         <div style={{ padding: '4px 22px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <button onClick={clearAll} style={{ background: 'transparent', border: 'none', color: pal.danger, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Limpiar</button>
-          <div style={{ fontFamily: fonts.display, fontSize: 17, fontWeight: 700, color: pal.ink }}>Filtros</div>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.primary, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Aplicar</button>
+          <button onClick={clearAll} style={{ background: 'transparent', border: 'none', color: pal.danger, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{t('recipes.filters.clear')}</button>
+          <div style={{ fontFamily: fonts.display, fontSize: 17, fontWeight: 700, color: pal.ink }}>{t('recipes.filters.title')}</div>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.primary, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{t('recipes.filters.apply')}</button>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 22px 20px' }}>
-          <Group label="🥕 Por ingrediente">
+          <Group label={t('recipes.filters.byIngredient')}>
             <IngredientPicker inventory={inventory}
               selected={filters.ingredients || []}
               onChange={(arr) => setFilter('ingredients', arr.length ? arr : null)} />
           </Group>
 
-          <Group label="⏱ Tiempo">
+          <Group label={t('recipes.filters.timeGroup')}>
             <ChipsRow>
               {FILTER_DEFS.time.map((opt) => (
                 <Chip key={opt.id} pal={pal} active={filters.time === opt.id}
                   onClick={() => setFilter('time', filters.time === opt.id ? null : opt.id)}>
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </Chip>
               ))}
             </ChipsRow>
           </Group>
 
-          <Group label="🍳 A fregar">
+          <Group label={t('recipes.filters.toWashGroup')}>
             <ChipsRow>
               {FILTER_DEFS.tools.map((opt) => (
                 <Chip key={opt.id} pal={pal} active={filters.tools === opt.id}
                   onClick={() => setFilter('tools', filters.tools === opt.id ? null : opt.id)}>
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </Chip>
               ))}
             </ChipsRow>
           </Group>
 
-          <Group label="✅ Stock">
+          <Group label={t('recipes.filters.stockGroup')}>
             <Chip pal={pal} active={!!filters.available}
               onClick={() => setFilter('available', !filters.available)}>
-              Sólo las que puedo hacer ahora
+              {t('recipes.filters.onlyDoable')}
             </Chip>
           </Group>
         </div>
@@ -154,7 +156,7 @@ const IngredientPicker = ({ inventory, selected, onChange }) => {
         onKeyDown={(e) => {
           if (e.key === 'Enter' && suggestions[0]) { e.preventDefault(); add(suggestions[0].name); }
         }}
-        placeholder="Escribe un ingrediente que tengas…"
+        placeholder={t('recipes.filters.ingredientPlaceholder')}
         style={{
           width: '100%', padding: '10px 14px', fontSize: 14,
           background: pal.surface, border: `0.5px solid ${pal.line}`,
@@ -177,7 +179,7 @@ const IngredientPicker = ({ inventory, selected, onChange }) => {
           background: pal.surface, borderRadius: 12, border: `0.5px solid ${pal.line}`,
         }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: pal.inkFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 6 }}>
-            Buscando recetas con
+            {t('recipes.filters.searchingWith')}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {selected.map((name) => (
@@ -193,7 +195,7 @@ const IngredientPicker = ({ inventory, selected, onChange }) => {
       )}
       {query.trim() && suggestions.length === 0 && (
         <div style={{ marginTop: 6, fontSize: 11, color: pal.inkFaint }}>
-          Nada en tu inventario empieza por "{query}". Ajusta o añade items primero.
+          {t('recipes.filters.noneInInventory', { query })}
         </div>
       )}
     </div>

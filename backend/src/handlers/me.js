@@ -34,8 +34,28 @@ export async function patchMe(request, env, cors, auth) {
   const args = [];
   if (typeof body.name === 'string') { updates.push('name=?'); args.push(body.name); }
   if (typeof body.avatar === 'string') { updates.push('avatar=?'); args.push(body.avatar); }
-  if (body.prefs && typeof body.prefs === 'object') {
-    updates.push('prefs_json=?'); args.push(JSON.stringify(body.prefs));
+  // Las prefs se FUSIONAN con las guardadas: cada pantalla manda sólo lo que
+  // cambia ({palette}, {lang, langAt}…). Reemplazándolas enteras, un móvil (o
+  // una pantalla) con una copia vieja de `me` pisaba lo que otro acababa de
+  // cambiar: elegir paleta tras cambiar de idioma devolvía la cuenta al idioma
+  // anterior.
+  //
+  // Se hace en UNA sentencia (json_patch sobre lo guardado), no leyendo y
+  // escribiendo aparte: dos PATCH a la vez ya no se pisan una clave. Y el
+  // idioma lleva marca de tiempo (langAt, la hora en que lo elegiste): si el
+  // guardado es más reciente que el que llega, el que llega se descarta. Así un
+  // cambio viejo hecho sin conexión, o un cliente antiguo que reenvía su copia
+  // de prefs sin langAt, no deshace una elección más nueva hecha en otro móvil.
+  if (body.prefs && typeof body.prefs === 'object' && !Array.isArray(body.prefs)) {
+    const stored = "(CASE WHEN json_valid(prefs_json) THEN prefs_json ELSE '{}' END)";
+    updates.push(
+      `prefs_json = json_patch(${stored}, CASE`
+      + ` WHEN json_extract(?, '$.lang') IS NOT NULL`
+      + ` AND COALESCE(json_extract(${stored}, '$.langAt'), 0) > COALESCE(json_extract(?, '$.langAt'), 0)`
+      + ` THEN json_remove(?, '$.lang', '$.langAt') ELSE ? END)`
+    );
+    const patch = JSON.stringify(body.prefs);
+    args.push(patch, patch, patch, patch);
   }
   if (!updates.length) return json({ ok: true }, 200, cors);
   args.push(auth.userId);

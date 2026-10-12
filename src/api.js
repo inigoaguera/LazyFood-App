@@ -1,28 +1,167 @@
 // Cliente IA — ahora pasa por el Worker autenticado en /ai con JWT + householdId.
 import { api, proxyConfigured as _proxyConfigured } from './api/client.js';
 import { getCurrentHousehold } from './api/session.js';
+import {
+  SUGGEST_RECIPES_SCHEMA, RECEIPT_SCHEMA, HUB_SCHEMA,
+  REPLACEMENT_SCHEMA, SCALE_SCHEMA, autoPlanSchema,
+} from './aiSchemas.js';
+import { t } from './i18n/index.js';
 
-const MODEL = 'gemini-2.5-flash';
+// Alias dinámico: Google lo reapunta al Flash-Lite más reciente. Se usa alias y
+// no un id fijo para no quedarnos anclados a un modelo viejo sin enterarnos;
+// avisan por email con dos semanas si el cambio rompe algo.
+//
+// Flash-Lite y no el Flash grande, medido el mismo día contra la API:
+//   | llamada        | gemini-flash-latest (3.6) | flash-lite      |
+//   | chat de 3 recetas | 2,4 s y 40,0 s         | 1,0 s y 0,8 s   |
+//   | hub de 15 recetas | timeout a los 60 s     | 7,2 s completas |
+//   | escaneo de ticket | 2,8 s, datos exactos   | 2,1 s, idénticos|
+// Un sondeo de 5 llamadas seguidas al Flash grande dio 39,9 / 40,9 / 59,3 /
+// fallo por saturación / 54,0 s: está congestionado en el nivel gratuito.
+// Flash-Lite además es el que más peticiones gratuitas permite y el que Google
+// recomienda para extracción estructurada, que es justo lo que hace esta app.
+const MODEL = 'gemini-flash-lite-latest';
+// Respaldo anclado a la versión concreta que hoy hay detrás del alias. Cubre el
+// fallo que dejaría la app entera sin IA: que el alias se mueva a un modelo que
+// no trague estos parámetros. Pasó de verdad al saltar de 2.5 a 3, cuando
+// thinkingBudget dejó de valer y empezó a devolver 400.
+const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
 export const proxyConfigured = _proxyConfigured;
+
+// Error propio para poder distinguir "la IA contestó algo que no entiendo" de
+// "no hay conexión". Antes ambos acababan en el mismo mensaje de red, que
+// mandaba a mirar el wifi cuando el wifi estaba perfecto.
+export class AiParseError extends Error {
+  constructor(raw) {
+    super(t('errors.code.AI_PARSE'));
+    this.name = 'AiParseError';
+    this.code = 'AI_PARSE';
+    this.raw = raw;
+  }
+}
+
+// El modelo gasta un presupuesto de razonamiento antes de emitir la respuesta
+// visible, y cuando se dispara la salida se trunca a media frase y JSON.parse
+// revienta: ése era el fallo intermitente de la IA. Estas llamadas piden JSON
+// estructurado y no necesitan razonar, así que van al mínimo con un techo de
+// salida holgado.
+//
+// OJO con el nombre del parámetro, que cambió con Gemini 3 y está medido:
+//   thinkingConfig: { thinkingBudget: 0 }      → 400 INVALID_ARGUMENT
+//   generationConfig.thinkingLevel (plano)     → 400, campo desconocido
+//   thinkingConfig: { thinkingLevel: 'minimal' } → OK, thoughts = 0
+// Y sin ponerlo, el esfuerzo por defecto es 'medium': una llamada trivial se
+// comió los 60 s de timeout del proxy.
+const JSON_GEN_DEFAULTS = {
+  responseMimeType: 'application/json',
+  maxOutputTokens: 8192,
+  thinkingConfig: { thinkingLevel: 'minimal' },
+};
+// `schema` va aparte para que quede claro que no es opcional: con
+// responseSchema la forma de la respuesta la garantiza la API, no el prompt.
+const jsonConfig = (schema, extra = {}) => ({ ...JSON_GEN_DEFAULTS, responseSchema: schema, ...extra });
+
+// Las tres llamadas que generan recetas suben a 'medium'. No es por creatividad
+// sino por capacidad de obedecer una restricción negativa: "no repitas la base
+// de ninguna de estas quince". Medido con seis reemplazos seguidos y la misma
+// lista de evitar:
+//   minimal → tres de seis eran el mismo arroz con pollo, y colaba arroz con
+//             leche como cena pese a la regla explícita de "no postres".
+//   medium  → seis platos distintos, ningún postre.
+// Cuesta: el reemplazo pasa de ~3 s a ~6,4 s.
+const PENSANDO_RECETAS = { thinkingConfig: { thinkingLevel: 'medium' } };
+
+// Las recetas a evitar se le dan CON SU BASE de ingredientes, no sólo el nombre.
+// Medido: pidiéndole que evite nombres, el modelo cambia el nombre y devuelve el
+// mismo plato — cinco reemplazos seguidos oscilaban entre huevo+tomate y
+// pasta+atún con cinco títulos distintos.
+function formatAvoid(avoid = []) {
+  return avoid
+    .map((a) => {
+      if (typeof a === 'string') return `- ${a}`;
+      if (!a?.name) return null;
+      const base = (a.uses || []).slice(0, 4).join(', ');
+      return `- ${a.name}${base ? ` (base: ${base})` : ''}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+// Idioma de salida. Los prompts se quedan en castellano (están afinados y
+// medidos así); si el usuario usa la app en inglés se añade al final la
+// directiva de ai.directive, que pide el texto visible en inglés y deja
+// intactas las claves y los enums del JSON. En castellano es cadena vacía.
+//
+// `uses: true` en los prompts que devuelven ingredientes del inventario: la
+// regla ai.usesRule (en los dos idiomas) pide copiar el nombre del inventario
+// para que util/stock.js lo encuentre al cocinar y al pintar el stock.
+function withLang(prompt, { uses = false } = {}) {
+  const parts = [prompt];
+  if (uses) parts.push(t('ai.usesRule'));
+  const directive = t('ai.directive');
+  if (directive) parts.push(directive);
+  return parts.join('\n\n');
+}
+
+function codedError(code) {
+  const err = new Error(t(`errors.code.${code}`));
+  err.code = code;
+  return err;
+}
 
 async function callAi(payload) {
   const householdId = await getCurrentHousehold();
-  if (!householdId) throw new Error('Sin casa activa');
-  return api('/ai', { method: 'POST', body: { model: MODEL, payload, householdId } });
+  if (!householdId) throw codedError('NO_HOUSEHOLD_LOCAL');
+  const body = { model: MODEL, payload, householdId };
+  try {
+    return await api('/ai', { method: 'POST', body });
+  } catch (e) {
+    // Se reintenta con el respaldo en dos casos:
+    //   4xx → el alias apunta a un modelo que no traga estos parámetros.
+    //   503 → el modelo está saturado (llega rápido, ~9 s, así que reintentar
+    //         sale barato y suele funcionar: el respaldo va menos cargado).
+    // NO se reintenta el 504, que es nuestro propio timeout: repetir una
+    // llamada que ya ha tardado dos minutos sólo hace esperar el doble.
+    const status = Number(e?.status);
+    const reintentable = (status >= 400 && status < 500) || status === 503;
+    if (!reintentable) throw e;
+    console.warn(`[lazyfood] ${MODEL} falló (${status}), reintento con ${FALLBACK_MODEL}:`, e?.message);
+    return api('/ai', { method: 'POST', body: { ...body, model: FALLBACK_MODEL } });
+  }
+}
+
+// Llama, extrae y parsea. Si el JSON viene roto reintenta una vez: el truncado
+// depende del razonamiento que gaste el modelo en cada ejecución concreta.
+async function callAiJson(payload) {
+  try {
+    return tryParseJSON(extractText(await callAi(payload)));
+  } catch (e) {
+    if (e?.code !== 'AI_PARSE') throw e;
+    return tryParseJSON(extractText(await callAi(payload)));
+  }
 }
 
 function extractText(geminiResponse) {
   const parts = geminiResponse?.candidates?.[0]?.content?.parts;
-  if (!parts) throw new Error('Respuesta vacía del modelo');
+  if (!parts) throw codedError('AI_EMPTY');
   return parts.map((p) => p.text || '').join('').trim();
 }
 
 function tryParseJSON(raw) {
-  let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-  const first = cleaned.indexOf('{');
-  const last = cleaned.lastIndexOf('}');
-  if (first >= 0 && last > first) cleaned = cleaned.slice(first, last + 1);
-  return JSON.parse(cleaned);
+  let cleaned = String(raw || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+  // Acepta objeto o array en el nivel superior; antes sólo contemplaba `{`.
+  const starts = [cleaned.indexOf('{'), cleaned.indexOf('[')].filter((i) => i >= 0);
+  if (starts.length) {
+    const first = Math.min(...starts);
+    const closer = cleaned[first] === '{' ? '}' : ']';
+    const last = cleaned.lastIndexOf(closer);
+    if (last > first) cleaned = cleaned.slice(first, last + 1);
+  }
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    throw new AiParseError(raw);
+  }
 }
 
 export async function suggestRecipes({ inventory, userPrompt }) {
@@ -50,11 +189,10 @@ Responde SÓLO con JSON válido (sin markdown, sin texto extra) con esta forma:
 Máximo 3 recetas. Prioriza ingredientes que caduquen pronto. Sólo usa ingredientes del inventario.
 Tienen que ser comidas/cenas completas, no snacks. Añade pasos breves (3-6) para que el usuario pueda ejecutarlas.`;
 
-  const res = await callAi({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.8, responseMimeType: 'application/json' },
+  return callAiJson({
+    contents: [{ role: 'user', parts: [{ text: withLang(prompt, { uses: true }) }] }],
+    generationConfig: jsonConfig(SUGGEST_RECIPES_SCHEMA, { temperature: 0.8, ...PENSANDO_RECETAS }),
   });
-  return tryParseJSON(extractText(res));
 }
 
 export async function scanReceipt({ imageBase64, mimeType = 'image/jpeg' }) {
@@ -98,7 +236,7 @@ Responde SÓLO con JSON válido sin markdown:
     {"name": "Sal yodada", "qty": 1, "price": 0.65, "category": "conserva", "loc": "pantry", "type": "continuous", "unit": "kg", "shape": "jar", "expiresInDays": null, "emoji": "🧂"}
   ]
 }`;
-  const res = await callAi({
+  return callAiJson({
     contents: [{
       role: 'user',
       parts: [
@@ -106,14 +244,20 @@ Responde SÓLO con JSON válido sin markdown:
         { inlineData: { mimeType, data: imageBase64 } },
       ],
     }],
-    generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+    // La única de las seis que sube del mínimo: aquí no se rellena un formato
+    // dado, hay que mirar una foto, distinguir columnas y entender que "2,35"
+    // es un precio y "26/06/26" una fecha. Se queda en 'low' y no en 'medium'
+    // porque esta llamada ya carga con la imagen y hay timeout en el proxy.
+    generationConfig: jsonConfig(RECEIPT_SCHEMA, {
+      temperature: 0.2,
+      thinkingConfig: { thinkingLevel: 'low' },
+    }),
   });
-  return tryParseJSON(extractText(res));
 }
 
 // Sugiere recetas para el hub de Recetas, con 3 secciones:
 // effortless = listas con lo que tienes, simples; chef = más elaboradas; oneOff = falta 1 ingrediente.
-export async function suggestRecipesForHub({ inventory }) {
+export async function suggestRecipesForHub({ inventory, avoid = [] }) {
   const prompt = `Eres un chef que propone recetas con lo que el usuario tiene en su nevera/despensa.
 
 Inventario actual:
@@ -124,11 +268,22 @@ Sugiere 15 recetas en total, repartidas en 3 grupos:
 2. chef (5): se preparan con lo que tiene pero más elaboradas. Tiempo 30-60 min.
 3. oneOff (5): le falta SÓLO 1 ingrediente concreto que NO tiene en el inventario.
 
-REGLA CRÍTICA: TODAS deben ser comidas o cenas completas que llenen, NO snacks ni picoteos. Una tostada con jamón no vale. Una tostada con jamón + huevo + ensalada sí. La idea es que con esa receta cenas/comes, no que es un "tentempié".
+REGLA CRÍTICA: TODAS deben ser comidas o cenas completas que llenen, NO snacks ni picoteos ni postres. Una tostada con jamón no vale. Una tostada con jamón + huevo + ensalada sí. La idea es que con esa receta cenas/comes, no que es un "tentempié".
+
+VARIEDAD — esto es tan importante como lo anterior:
+- Las 15 tienen que ser platos DISTINTOS entre sí, no el mismo plato con otro nombre. "Pasta con atún y tomate" y "Espaguetis rápidos con atún" son la misma cena: no valen las dos.
+- Reparte las técnicas: sartén, horno, guiso, plancha, hervido, crudo/ensalada, sopa. Que no sean quince sartenes.
+- Varía la base: no montes doce recetas sobre huevo y pasta porque sean lo más fácil.
+- Da por hecho que tiene sal, aceite, vinagre, pimienta y especias básicas: no hace falta que aparezcan en el inventario.
+- Que apetezca comérselas. Cocina de casa, pero con gracia: no te quedes siempre en lo más obvio salvo que el inventario no dé para más.${avoid.length ? `
+
+YA LE HAS PROPUESTO O HA DESCARTADO ESTAS (con su base de ingredientes):
+${formatAvoid(avoid)}
+No repitas ninguna NI otra versión con la misma base. Cambiarle el nombre no cuenta: si ahí ya hay algo de huevo con tomate, cambia de ingrediente principal o de técnica.` : ''}
 
 Para cada receta dame:
 - name, time (minutos), img (uno de: pasta, tortilla, caprese, bocata, huevos, tostada, risotto, curry, salmon, paella, guaca, pizza, burger, taco, ramen, sopa, ensalada, pollo, carne, sushi, pancakes, donut, cake, fruta, smoothie, cafe, helado, picante, bento)
-- uses: lista de ingredientes que usa (3-6 nombres cortos)
+- uses: 3-6 nombres CORTOS de ingrediente, sin cantidades ni unidades — "arroz", no "Arroz: 1 kg"
 - tools: lista de instrumentos GRANDES que se manchan y hay que fregar a mano (sartén honda, olla, batidora, tabla de cortar, horno, vaporera...). NO incluyas cubiertos, vasos ni platos. Para effortless típicamente 1, para chef 2-4.
 - steps: lista de 3-6 pasos breves para preparar la receta.
 - why: 1 frase corta del por qué encaja (sólo si aplica)
@@ -173,11 +328,10 @@ Formato — SÓLO JSON válido sin markdown:
 
 Si el inventario está vacío o casi vacío, devuelve arrays vacíos pero respeta la estructura.`;
 
-  const res = await callAi({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.85, responseMimeType: 'application/json' },
+  return callAiJson({
+    contents: [{ role: 'user', parts: [{ text: withLang(prompt, { uses: true }) }] }],
+    generationConfig: jsonConfig(HUB_SCHEMA, { temperature: 0.85, ...PENSANDO_RECETAS }),
   });
-  return tryParseJSON(extractText(res));
 }
 
 // Pide UNA receta de reemplazo para una sección concreta del hub.
@@ -192,8 +346,15 @@ export async function suggestReplacementRecipe({ inventory, section, avoid }) {
 
 ${sectionGuide[section] || ''}
 
-Evita repetir estas recetas (el usuario las ha descartado o ya las ve):
-${avoid.length ? avoid.map((n) => `- ${n}`).join('\n') : '(ninguna)'}
+El usuario YA HA VISTO o ha DESCARTADO estas, con su base de ingredientes:
+${avoid.length ? formatAvoid(avoid) : '(ninguna)'}
+
+No propongas ninguna de ellas ni una variación de la misma base: cambiarle el
+nombre NO cuenta. "Pasta con atún y tomate" y "Espaguetis rápidos con atún" son
+el mismo plato. Si en esa lista ya hay algo de huevo con tomate, o de pasta con
+atún, vete a otro ingrediente principal o a otra técnica (horno, guiso, plancha,
+hervido, crudo, sopa). Da por hecho que tiene sal, aceite, vinagre, pimienta y
+especias básicas aunque no estén en el inventario.
 
 Inventario actual:
 ${inventory}
@@ -211,13 +372,16 @@ Responde SÓLO con JSON válido sin markdown:
 }
 
 img debe ser una de: pasta, tortilla, caprese, bocata, huevos, tostada, risotto, curry, salmon, paella, guaca, pizza, burger, taco, ramen, sopa, ensalada, pollo, carne, sushi, pancakes, donut, cake, fruta, smoothie, cafe, helado, picante, bento.
-La receta debe ser una comida/cena completa, no un snack.`;
 
-  const res = await callAi({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.9, responseMimeType: 'application/json' },
+Tiene que ser una comida o cena COMPLETA que llene: nada de snacks, picoteos ni
+postres. El arroz con leche o unas natillas no son una cena.
+uses: 3-6 nombres CORTOS de ingrediente, sin cantidades ni unidades — "arroz",
+no "Arroz: 1 kg".`;
+
+  return callAiJson({
+    contents: [{ role: 'user', parts: [{ text: withLang(prompt, { uses: true }) }] }],
+    generationConfig: jsonConfig(REPLACEMENT_SCHEMA, { temperature: 0.9, ...PENSANDO_RECETAS }),
   });
-  return tryParseJSON(extractText(res));
 }
 
 // Reescala los ingredientes de una receta para nuevas raciones.
@@ -236,7 +400,7 @@ ${ingrList}
 Reescala las cantidades de forma COHERENTE:
 - La mayoría se escalan linealmente (× ${toServings}/${fromServings} = ${(toServings / fromServings).toFixed(3)}).
 - Pero usa criterio: especias / sal / pimienta / aceite para freír / agua de cocción no escalan 1:1.
-- Cantidades como "al gusto", "una pizca", "un puñado" se mantienen igual.
+- Cantidades como ${t('ai.scaleKeepAsIs')} se mantienen igual.
 - Si la cantidad original está vacía, déjala vacía.
 - Mantén el unit original cuando tenga sentido. Si la cantidad escalada es muy grande, puedes cambiar de unidad (ej: 500g → 0.5kg).
 
@@ -249,15 +413,21 @@ Responde SÓLO con JSON válido:
 }
 Mantén el mismo orden y nº de ingredientes que la entrada.`;
 
-  const res = await callAi({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
+  return callAiJson({
+    contents: [{ role: 'user', parts: [{ text: withLang(prompt) }] }],
+    generationConfig: jsonConfig(SCALE_SCHEMA, { temperature: 0.3 }),
   });
-  return tryParseJSON(extractText(res));
 }
 
 export async function autoPlanMenu({ inventory, recipes, currentPlan, days, meals }) {
   const recipeList = recipes.map((r) => `- [${r.id}] ${r.name} (${r.time}m, esfuerzo ${r.effort}/3)`).join('\n');
+  // Sólo se ofrecen los huecos que están libres: el esquema los acota por enum,
+  // así que el modelo no puede pisar una elección tuya ni inventarse un hueco.
+  const freeSlots = [];
+  for (const d of days) for (const m of meals) {
+    const slot = `${d}-${m}`;
+    if (!currentPlan[slot]) freeSlots.push(slot);
+  }
   const prompt = `Planifica las comidas y cenas de la semana usando recetas que el usuario YA tiene guardadas.
 Prioriza ingredientes que caduquen pronto y evita repetir la misma receta dos días seguidos.
 
@@ -267,24 +437,20 @@ ${inventory}
 Recetas disponibles:
 ${recipeList}
 
-Slots vacíos a rellenar (mantén estos para no sobrescribir las elecciones del usuario):
+Ya ocupados (NO los toques):
 ${Object.entries(currentPlan).filter(([, v]) => v).map(([k, v]) => `${k} = ${v}`).join('\n') || '(ninguno)'}
 
-Días: ${days.join(', ')}
-Comidas: ${meals.join(', ')}
+Huecos LIBRES que puedes rellenar:
+${freeSlots.join(', ') || '(ninguno)'}
 
-Responde SÓLO con JSON válido:
-{
-  "plan": {
-    "mon-lunch": "<recipeId>",
-    "mon-dinner": "<recipeId>"
-  }
-}
-Sólo asigna a slots VACÍOS. Usa los IDs exactos de la lista de recetas.`;
+Devuelve una lista de asignaciones, cada una con su hueco y el id exacto de una
+receta de la lista. No repitas hueco ni asignes a uno que no esté libre.`;
 
-  const res = await callAi({
+  return callAiJson({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.6, responseMimeType: 'application/json' },
+    generationConfig: jsonConfig(
+      autoPlanSchema(freeSlots, recipes.map((r) => r.id)),
+      { temperature: 0.6 },
+    ),
   });
-  return tryParseJSON(extractText(res));
 }
