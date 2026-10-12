@@ -94,18 +94,29 @@ export default function App() {
   // Idioma: el de tu cuenta (prefs) manda; antes del login, el elegido en este
   // móvil (settings.lang / localStorage) y si no, el del sistema. Se fija aquí,
   // en el render, para que los hijos ya pinten con el idioma nuevo.
+  const pendingLang = normalizeLang(settings.langPending);
   const lang = setLang(
-    normalizeLang(userPrefs.lang) || normalizeLang(settings.lang) || storedLang() || detectLang()
+    pendingLang || normalizeLang(userPrefs.lang) || normalizeLang(settings.lang) || storedLang() || detectLang()
   );
   useEffect(() => { rememberLangLocally(lang); }, [lang]);
 
-  // Primer login (o cuenta anterior a esta función): la cuenta aún no tiene
-  // idioma, así que se queda con el que estás usando ahora.
+  // La cuenta no tiene el idioma en uso: primer login (o cuenta anterior a
+  // esta función), o un cambio de idioma cuyo PATCH falló (langPending, ver
+  // i18n/switch.js). Se sube el idioma actual y se limpia la marca. Depende de
+  // `me`, que se relee con cada cambio de settings (incluida la marca y cada
+  // /me): así sube el cambio al momento y lo reintenta al volver la conexión.
   useEffect(() => {
-    if (me?.id && me.prefs && !normalizeLang(me.prefs.lang)) {
-      patchMe({ prefs: { ...me.prefs, lang } }).catch(() => {});
+    if (!me?.id || !me.prefs) return;
+    const needsSync = pendingLang ? me.prefs.lang !== pendingLang : !normalizeLang(me.prefs.lang);
+    if (!needsSync) {
+      if (pendingLang) setSetting('langPending', null);
+      return;
     }
-  }, [me?.id, me?.prefs?.lang]);
+    patchMe({ prefs: { ...me.prefs, lang } })
+      .then(() => setSetting('langPending', null))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me]);
 
   const pal = LF_PALETTES[palette] || LF_PALETTES.huerto;
   const fonts = LF_FONTS[fontKey] || LF_FONTS.playful;

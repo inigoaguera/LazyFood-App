@@ -50,10 +50,8 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
 
   const handleLang = async (k) => {
     if (k === lang) return;
-    try {
-      await changeLang(k);
-      setMe((cur) => (cur ? { ...cur, prefs: { ...(cur.prefs || {}), lang: k } } : cur));
-    } catch (e) { toast(errMsg(e), 'error'); }
+    // Sin conexión también vale: se aplica ya y App lo sube a la cuenta luego.
+    try { await changeLang(k); } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const handleLeave = async () => {

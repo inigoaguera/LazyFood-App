@@ -80,7 +80,7 @@ export default function Login({ pendingInvite }) {
       {/* Idioma antes de entrar: se guarda en este móvil y pasa a la cuenta al iniciar sesión. */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: -20 }}>
         {Object.keys(LANGS).map((k) => (
-          <button key={k} onClick={() => changeLang(k)} style={{
+          <button key={k} onClick={() => { if (k !== lang) changeLang(k).catch(() => {}); }} style={{
             padding: '5px 10px', borderRadius: 12, cursor: 'pointer',
             fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
             background: lang === k ? pal.ink : 'transparent',

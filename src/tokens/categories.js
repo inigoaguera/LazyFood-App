@@ -19,4 +19,3 @@ export const LF_CATEGORIES = [
 ];
 
 export const catColor = (id) => LF_CATEGORIES.find((c) => c.id === id)?.color || '#E8E4D8';
-export const catLabel = (id) => LF_CATEGORIES.find((c) => c.id === id)?.label || '';
