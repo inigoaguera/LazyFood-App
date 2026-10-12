@@ -1,3 +1,27 @@
-// Namespace 'chat'. Mismas claves en es/ y en/ — ver src/i18n/index.js.
+// Namespace 'chat' — see es/chat.js.
 export default {
+  welcome: "Hi! Tell me what you fancy and I'll suggest recipes with what you've got at home. Ask me for quick, light, sweet, no-cook… anything you like.",
+  title: 'Cravings?',
+  subtitle: 'Recipes with what you have',
+  clearConfirm: 'Delete the whole cravings history?',
+  clearTitle: 'Clear history',
+  placeholder: 'I fancy something creamy and quick…',
+  constraints: '(constraints: {list})',
+  noProxy: 'Set VITE_API_PROXY_URL in .env and deploy the worker so I can think 🤖',
+  noIdeas: "I couldn't come up with anything clear. Shall we try something else?",
+  errParse: "I got in a muddle with my own answer and couldn't read it. Give it another go 🙈",
+  errRate: 'Too many requests in a row. Wait about a minute and try again 🐢',
+  errConnect: "Oops, I couldn't connect. Try again in a moment.",
+  view: 'View recipe',
+  saved: 'Saved to "Your recipes" 💾',
+  filter: {
+    quick: { label: '⚡ Quick', prompt: 'under 15 minutes' },
+    fewdishes: { label: '🍽 Few pans', prompt: 'with as little washing up as possible' },
+    sweet: { label: '🍰 Sweet', prompt: 'something sweet' },
+    salty: { label: '🧂 Savoury', prompt: 'something savoury' },
+    light: { label: '🥗 Light', prompt: 'something light and healthy' },
+    comfort: { label: '🍲 Comfort', prompt: 'comfort food' },
+    noheat: { label: '🥶 No cooking', prompt: 'no cooking at all, nothing that needs the hob or oven' },
+    protein: { label: '💪 High protein', prompt: 'high in protein' },
+  },
 };

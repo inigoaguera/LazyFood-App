@@ -8,13 +8,16 @@ import { create as resourceCreate, patch as resourcePatch, remove as resourceRem
 import { syncHousehold } from '../api/sync.js';
 import { RECIPE_THUMBS } from '../data/recipeThumbs.jsx';
 import AddEditModal from './AddEditItem.jsx';
+import { t, errMsg } from '../i18n/index.js';
+import { groupLabel } from '../i18n/labels.js';
 
 const IMG_OPTIONS = Object.entries(RECIPE_THUMBS);
+// Los ids son lo que se guarda en la receta; la etiqueta se pinta con groupLabel().
 const GROUPS = [
-  { id: 'yours', label: 'Tus recetas' },
-  { id: 'effortless', label: 'Cero esfuerzo' },
-  { id: 'chef', label: 'Modo chef' },
-  { id: 'oneOff', label: 'Te falta 1 ingrediente' },
+  { id: 'yours' },
+  { id: 'effortless' },
+  { id: 'chef' },
+  { id: 'oneOff' },
 ];
 
 export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
@@ -99,14 +102,14 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
     setTools((xs) => [...xs, '']);
     if (focus) setFocusTool(newIdx);
   };
-  const updateTool = (i, val) => setTools((xs) => xs.map((t, idx) => idx === i ? val : t));
+  const updateTool = (i, val) => setTools((xs) => xs.map((tool, idx) => idx === i ? val : tool));
   const removeTool = (i) => setTools((xs) => xs.filter((_, idx) => idx !== i));
 
   // Esfuerzo se deriva del nº de instrumentos a fregar (mín 1 para no enseñar 0).
-  const computedEffort = Math.max(1, tools.filter((t) => t.trim()).length);
+  const computedEffort = Math.max(1, tools.filter((tool) => tool.trim()).length);
 
   const save = async () => {
-    if (!name.trim()) { toast('Ponle un nombre a la receta', 'error'); return; }
+    if (!name.trim()) { toast(t('recipes.editor.nameRequired'), 'error'); return; }
     if (!hid) return;
     setBusy(true);
     try {
@@ -114,7 +117,7 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
         name: name.trim(),
         time: Number(time) || 0,
         effort: computedEffort,
-        img, group,
+        img, group, // i18n-ignore
         author: 'tuya',
       };
       let actualRecipeId = recipeId;
@@ -132,7 +135,7 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
         itemId: i.itemId || null,
       }));
       const cleanSteps = steps.map((s) => s.trim()).filter(Boolean);
-      const cleanTools = tools.map((t) => t.trim()).filter(Boolean);
+      const cleanTools = tools.map((tool) => tool.trim()).filter(Boolean);
 
       const detailPayload = {
         matchName: name.trim(),
@@ -141,7 +144,7 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
         effort: computedEffort,
         servings: Number(servings) || 2,
         img,
-        desc: desc.trim() || `${name.trim()}. Listo en ${time} min.`,
+        desc: desc.trim() || t('recipes.descFallback', { name: name.trim(), time }),
         ingredients: cleanIngredients,
         steps: cleanSteps,
         tools: cleanTools,
@@ -153,22 +156,22 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
       }
 
       await syncHousehold(hid);
-      toast(editing ? 'Receta actualizada' : 'Receta creada');
+      toast(editing ? t('recipes.editor.updated') : t('recipes.editor.created'));
       onSaved?.(actualRecipeId);
     } catch (e) {
-      toast(e?.message || 'No se pudo guardar', 'error');
+      toast(errMsg(e, 'recipes.editor.saveFail'), 'error');
     } finally { setBusy(false); }
   };
 
   const handleDelete = async () => {
-    if (!editing || !confirm(`¿Borrar "${name}" para siempre?`)) return;
+    if (!editing || !confirm(t('recipes.editor.confirmDelete', { name }))) return;
     try {
       await resourceRemove('recipes', hid, recipeId);
       if (existingDetailId) await resourceRemove('recipeDetails', hid, existingDetailId);
       await syncHousehold(hid);
-      toast('Receta borrada');
+      toast(t('recipes.editor.deleted'));
       onSaved?.(null);
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   return (
@@ -181,14 +184,14 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
         padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         borderBottom: `0.5px solid ${pal.line}`,
       }}>
-        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer' }}>Cancelar</button>
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer' }}>{t('common.cancel')}</button>
         <div style={{ fontFamily: fonts.display, fontSize: 17, fontWeight: 700, color: pal.ink }}>
-          {editing ? 'Editar receta' : 'Nueva receta'}
+          {editing ? t('recipes.editor.titleEdit') : t('recipes.editor.titleNew')}
         </div>
         <button onClick={save} disabled={busy} style={{
           background: 'transparent', border: 'none',
           color: pal.primary, fontSize: 14, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
-        }}>{busy ? '…' : 'Guardar'}</button>
+        }}>{busy ? '…' : t('common.save')}</button>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
@@ -200,39 +203,39 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
           {RECIPE_THUMBS[img]?.e || '🍽️'}
         </div>
 
-        <Field label="Nombre">
+        <Field label={t('recipes.editor.name')}>
           <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
-            placeholder="Mi receta favorita"
+            placeholder={t('recipes.editor.namePlaceholder')}
             style={inputStyle(pal)} />
         </Field>
 
-        <Field label="Imagen">
+        <Field label={t('recipes.editor.image')}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 6 }}>
-            {IMG_OPTIONS.map(([id, t]) => (
+            {IMG_OPTIONS.map(([id, thumb]) => (
               <button key={id} onClick={() => setImg(id)} style={{
                 aspectRatio: '1', borderRadius: 10, cursor: 'pointer', fontSize: 22,
-                background: `linear-gradient(135deg, ${t.c[0]}, ${t.c[1]})`,
+                background: `linear-gradient(135deg, ${thumb.c[0]}, ${thumb.c[1]})`,
                 border: img === id ? `2px solid ${pal.ink}` : `0.5px solid ${pal.line}`,
-              }}>{t.e}</button>
+              }}>{thumb.e}</button>
             ))}
           </div>
         </Field>
 
         <div style={{ display: 'flex', gap: 8 }}>
           <div style={{ flex: 1 }}>
-            <Field label="Tiempo (min)">
+            <Field label={t('recipes.editor.time')}>
               <input type="number" inputMode="numeric" value={time} onChange={(e) => setTime(Number(e.target.value) || 0)}
                 style={inputStyle(pal)} />
             </Field>
           </div>
           <div style={{ flex: 1 }}>
-            <Field label="Raciones">
+            <Field label={t('recipes.editor.servings')}>
               <input type="number" inputMode="numeric" min={1} value={servings} onChange={(e) => setServings(Math.max(1, Number(e.target.value) || 1))}
                 style={inputStyle(pal)} />
             </Field>
           </div>
           <div style={{ flex: 1 }}>
-            <Field label={`A fregar (${computedEffort})`}>
+            <Field label={t('recipes.editor.toWashN', { n: computedEffort })}>
               <div style={{
                 ...inputStyle(pal), display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: pal.surface, color: pal.inkSoft, fontWeight: 700,
@@ -241,7 +244,7 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
           </div>
         </div>
 
-        <Field label="Sección">
+        <Field label={t('recipes.editor.section')}>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {GROUPS.map((g) => (
               <button key={g.id} onClick={() => setGroup(g.id)} style={{
@@ -250,20 +253,20 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
                 color: group === g.id ? pal.bg : pal.inkSoft,
                 border: `0.5px solid ${group === g.id ? pal.ink : pal.line}`,
                 fontSize: 12, fontWeight: 600,
-              }}>{g.label}</button>
+              }}>{groupLabel(g.id)}</button>
             ))}
           </div>
         </Field>
 
-        <Field label="Descripción (opcional)">
+        <Field label={t('recipes.editor.desc')}>
           <textarea value={desc} onChange={(e) => setDesc(e.target.value)}
-            placeholder="Una línea sobre la receta…" rows={2}
+            placeholder={t('recipes.editor.descPlaceholder')} rows={2}
             style={{ ...inputStyle(pal), resize: 'vertical', minHeight: 60 }} />
         </Field>
 
         {/* Ingredientes — vinculables al inventario */}
-        <SectionHeader label={`Ingredientes (${ingredients.filter((i) => i.name?.trim()).length})`} onAdd={addIngredient}
-          hint="Toca un sugerido para vincularlo. Si no lo tienes, mándalo a la compra o añádelo al inventario." />
+        <SectionHeader label={t('recipes.editor.ingredientsN', { n: ingredients.filter((i) => i.name?.trim()).length })} onAdd={addIngredient}
+          hint={t('recipes.editor.ingredientsHint')} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
           {ingredients.map((ing, i) => (
             <IngredientRow key={i} ing={ing} index={i} inventory={inventory} hid={hid}
@@ -273,8 +276,8 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
         </div>
 
         {/* Pasos */}
-        <SectionLabel pal={pal} hint="puede ir vacío · enter para nuevo">
-          Pasos ({steps.filter((s) => s.trim()).length})
+        <SectionLabel pal={pal} hint={t('recipes.editor.stepsHint')}>
+          {t('recipes.editor.stepsN', { n: steps.filter((s) => s.trim()).length })}
         </SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
           {steps.map((s, i) => (
@@ -294,7 +297,7 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addStep(true); }
                 }}
-                placeholder="Lava los tomates, córtalos por la mitad…" rows={2}
+                placeholder={t('recipes.editor.stepPlaceholder')} rows={2}
                 style={{ flex: 1, padding: 6, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 6, resize: 'vertical', fontFamily: 'inherit' }} />
               <button onClick={() => removeStep(i)} style={{
                 background: 'transparent', border: 'none', color: pal.danger, fontSize: 18, cursor: 'pointer', padding: 4,
@@ -302,25 +305,25 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
             </div>
           ))}
         </div>
-        <button onClick={addStep} style={addBelowBtn(pal)}>+ Añadir paso</button>
+        <button onClick={addStep} style={addBelowBtn(pal)}>{t('recipes.editor.addStep')}</button>
 
         {/* Tools / instrumentos a fregar */}
-        <SectionLabel pal={pal} hint="cada uno suma 1 al icono 🍳 · enter para nuevo">
-          Instrumentos a fregar ({tools.filter((t) => t.trim()).length})
+        <SectionLabel pal={pal} hint={t('recipes.editor.toolsHint')}>
+          {t('recipes.editor.toolsN', { n: tools.filter((tool) => tool.trim()).length })}
         </SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
-          {tools.map((t, i) => (
+          {tools.map((tool, i) => (
             <div key={i} style={{
               display: 'flex', gap: 6, alignItems: 'center',
               padding: 8, background: pal.surface, borderRadius: 10,
               border: `0.5px solid ${pal.line}`,
             }}>
               <input ref={(el) => { toolRefs.current[i] = el; }}
-                value={t} onChange={(e) => updateTool(i, e.target.value)}
+                value={tool} onChange={(e) => updateTool(i, e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') { e.preventDefault(); addTool(true); }
                 }}
-                placeholder="Sartén honda, batidora, tabla…"
+                placeholder={t('recipes.editor.toolPlaceholder')}
                 style={{ flex: 1, padding: 6, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 6 }} />
               <button onClick={() => removeTool(i)} style={{
                 background: 'transparent', border: 'none', color: pal.danger, fontSize: 18, cursor: 'pointer', padding: 4,
@@ -329,11 +332,11 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
           ))}
           {tools.length === 0 && (
             <div style={{ padding: 10, fontSize: 11, color: pal.inkFaint, textAlign: 'center' }}>
-              Sin instrumentos = receta limpia
+              {t('recipes.editor.noTools')}
             </div>
           )}
         </div>
-        <button onClick={addTool} style={addBelowBtn(pal)}>+ Añadir instrumento</button>
+        <button onClick={addTool} style={addBelowBtn(pal)}>{t('recipes.editor.addTool')}</button>
         <div style={{ height: 14 }}/>
 
         {editing && (
@@ -342,7 +345,7 @@ export default function RecipeEditor({ recipeId, hid, onClose, onSaved }) {
             background: pal.dangerSoft, border: 'none', borderRadius: 12,
             color: pal.danger, fontSize: 13, fontWeight: 700, cursor: 'pointer',
           }}>
-            🗑 Borrar receta
+            {t('recipes.editor.deleteRecipe')}
           </button>
         )}
       </div>
@@ -383,8 +386,8 @@ const IngredientRow = ({ ing, inventory, hid, onChange, onRemove }) => {
         checked: 0, auto: 1, count: 1,
       });
       await syncHousehold(hid);
-      toast(`${ing.name} a la lista de la compra 🛒`);
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+      toast(t('recipes.editor.sentToShopping', { name: ing.name }));
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   return (
@@ -394,7 +397,7 @@ const IngredientRow = ({ ing, inventory, hid, onChange, onRemove }) => {
     }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         {linked && (
-          <span title="Vinculado a tu inventario" style={{
+          <span title={t('recipes.editor.linkedTitle')} style={{
             padding: '4px 8px', background: pal.primarySoft, color: pal.primary,
             borderRadius: 8, fontSize: 11, fontWeight: 700, flexShrink: 0,
           }}>
@@ -409,7 +412,7 @@ const IngredientRow = ({ ing, inventory, hid, onChange, onRemove }) => {
           }}
           onFocus={() => setShowSuggestions(true)}
           onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-          placeholder="Tomate cherry"
+          placeholder={t('recipes.editor.ingredientPlaceholder')}
           style={{ flex: 2, padding: 6, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 6 }} />
         <input value={ing.qty} onChange={(e) => onChange({ qty: e.target.value })}
           placeholder="200"
@@ -426,7 +429,7 @@ const IngredientRow = ({ ing, inventory, hid, onChange, onRemove }) => {
         <button onClick={unlink} style={{
           marginTop: 6, padding: '4px 8px', background: 'transparent',
           border: 'none', color: pal.inkSoft, fontSize: 11, cursor: 'pointer',
-        }}>Desvincular del inventario</button>
+        }}>{t('recipes.editor.unlink')}</button>
       )}
 
       {!linked && hasName && suggestions.length === 0 && !showSuggestions && (
@@ -436,13 +439,13 @@ const IngredientRow = ({ ing, inventory, hid, onChange, onRemove }) => {
             background: pal.bg, color: pal.ink,
             border: `0.5px solid ${pal.line}`,
             fontSize: 11, fontWeight: 600, cursor: 'pointer',
-          }}>📥 A inventario</button>
+          }}>{t('recipes.editor.toInventory')}</button>
           <button onClick={sendToShopping} style={{
             flex: 1, padding: '6px 10px', borderRadius: 8,
             background: pal.bg, color: pal.ink,
             border: `0.5px solid ${pal.line}`,
             fontSize: 11, fontWeight: 600, cursor: 'pointer',
-          }}>🛒 A la compra</button>
+          }}>{t('recipes.editor.toShopping')}</button>
         </div>
       )}
 
@@ -452,7 +455,7 @@ const IngredientRow = ({ ing, inventory, hid, onChange, onRemove }) => {
           padding: '6px 4px 2px', borderTop: `0.5px solid ${pal.line}`,
         }}>
           <div style={{ width: '100%', fontSize: 10, color: pal.inkFaint, fontWeight: 600, marginBottom: 4 }}>
-            En tu inventario:
+            {t('recipes.editor.inInventory')}
           </div>
           {suggestions.map((it) => (
             <button key={it.id} onMouseDown={(e) => { e.preventDefault(); pick(it); }}
@@ -479,7 +482,7 @@ const IngredientRow = ({ ing, inventory, hid, onChange, onRemove }) => {
             setAddingToInventory(false);
             if (saved?.id) {
               onChange({ itemId: saved.id, name: saved.name || ing.name });
-              toast(`Vinculado a "${saved.name}" 🔗`);
+              toast(t('recipes.editor.linkedTo', { name: saved.name }));
             }
           }} />
       )}
@@ -509,7 +512,7 @@ const SectionHeader = ({ label, onAdd, hint }) => {
         background: pal.primarySoft, color: pal.primary, border: 'none',
         borderRadius: 10, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
         marginLeft: 10, flexShrink: 0,
-      }}>+ Añadir</button>
+      }}>+ {t('common.add')}</button>
     </div>
   );
 };

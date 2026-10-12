@@ -164,7 +164,9 @@ for (const f of files) {
         const text = rest.replace(/[()\[\],:·—–\-+|]/g, ' ').replace(/\s+/g, ' ').trim();
         // Fuera: líneas de estilos/objetos/imports (camelCase, a.b, ternarios, prop:).
         const codey = /[{}]|[a-z][A-Z]|[a-z]\.[a-z]|\?|^\s*[\w$]+\s*:/.test(rest) && !SPANISH_CHARS.test(text);
-        if (!codey && /[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(text) && !hits.some((h) => text.includes(h))
+        // Listas de identificadores (destructuring, deps) y reglas CSS en línea.
+        const identList = /^\s*[\w$]+(\s*,\s*[\w$]+)*,?\s*$/.test(line) || /[\w-]+\s*\{[^}]*:[^}]*;\s*\}/.test(line);
+        if (!codey && !identList && /[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(text) && !hits.some((h) => text.includes(h))
           && (SPANISH_CHARS.test(text) || words(text) >= 2 || /^[A-ZÁÉÍÓÚÑ¿¡][a-záéíóúñ]+[.!?…]?$/.test(text))) {
           hits.push(text);
         }

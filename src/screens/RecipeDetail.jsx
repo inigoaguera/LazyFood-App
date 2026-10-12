@@ -11,6 +11,7 @@ import RecipeEditor from './RecipeEditor.jsx';
 import { scaleRecipeServings, proxyConfigured } from '../api.js';
 import { recipeStockStatus } from '../util/stock.js';
 import { useBackClose } from '../util/nav.js';
+import { t, errMsg } from '../i18n/index.js';
 
 export default function RecipeDetail({ recipeId, onBack, onCooked }) {
   const { pal, fonts, currentHouseholdMeta } = useLF();
@@ -46,26 +47,26 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
   if (!recipe) {
     return (
       <Screen>
-        <div style={{ padding: 40, textAlign: 'center', color: pal.inkSoft }}>Cargando…</div>
+        <div style={{ padding: 40, textAlign: 'center', color: pal.inkSoft }}>{t('common.loading')}</div>
       </Screen>
     );
   }
 
   const originalIngredients = detail?.ingredients || [
-    { name: 'Ingredientes principales', qty: 'al gusto' },
+    { name: t('recipes.detail.defaultIngredient'), qty: t('recipes.detail.defaultQty') },
   ];
   const r = {
     name: recipe.name,
     img: recipe.img,
     time: recipe.time,
     effort: recipe.effort,
-    desc: detail?.desc || `${recipe.name}. Listo en ${recipe.time} min.`,
+    desc: detail?.desc || t('recipes.descFallback', { name: recipe.name, time: recipe.time }),
     servings,
     ingredients: scaledIngredients || originalIngredients,
     steps: detail?.steps || [
-      'Prepara los ingredientes.',
-      'Cocina como prefieras.',
-      '¡Disfruta!',
+      t('recipes.detail.defaultStep1'),
+      t('recipes.detail.defaultStep2'),
+      t('recipes.detail.defaultStep3'),
     ],
   };
 
@@ -112,7 +113,7 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
       setScaledIngredients(out);
       setScaledFor(servings);
     } catch (e) {
-      toast(e?.message || 'No pude reescalar', 'error');
+      toast(errMsg(e, 'recipes.detail.rescaleFail'), 'error');
     } finally { setScaling(false); }
   };
   // El "OK" sólo aparece si hay diferencia entre lo pedido y lo aplicado
@@ -125,11 +126,14 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
     const missing = []; // ingredientes que no encontramos o que están a 0
     const approx = []; // descontados "a ojo" porque las unidades no casaban
 
-    // "uds"/"unidades"/"ud" son la misma cosa; el resto se compara tal cual.
+    // "uds"/"unidades"/"ud" son la misma cosa (y "pcs"/"pieces"/"units" en
+    // inglés); latas y paquetes igual. El resto se compara tal cual.
     const normalizeUnit = (u) => {
       const s = String(u || '').trim().toLowerCase();
       if (!s) return '';
-      if (['ud', 'uds', 'unidad', 'unidades', 'u'].includes(s)) return 'uds';
+      if (['ud', 'uds', 'unidad', 'unidades', 'u', 'pc', 'pcs', 'piece', 'pieces', 'unit', 'units'].includes(s)) return 'uds';
+      if (['can', 'cans', 'tin', 'tins'].includes(s)) return 'latas';
+      if (['pack', 'packs'].includes(s)) return 'paquetes';
       return s;
     };
 
@@ -199,15 +203,15 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
     }
 
     if (missing.length === 0) {
-      const base = `¡A comer! ${consumed} ingrediente${consumed === 1 ? '' : 's'} descontado${consumed === 1 ? '' : 's'}`;
+      const base = t('recipes.detail.cooked', { n: consumed });
       toast(approx.length
-        ? `${base}. En ${approx.map((a) => a.name).join(', ')} lo he hecho a ojo: las unidades no cuadraban`
+        ? t('recipes.detail.cookedApprox', { base, names: approx.map((a) => a.name).join(', ') })
         : base);
     } else {
       const names = missing.map((m) => m.name).join(', ');
-      toast(`Te faltan: ${names}`, 'info', {
+      toast(t('recipes.detail.youMiss', { names }), 'info', {
         action: {
-          label: 'A la compra',
+          label: t('recipes.detail.toShopping'),
           onClick: async () => {
             try {
               for (const m of missing) {
@@ -218,8 +222,8 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
                 });
               }
               await syncHousehold(hid);
-              toast(`${missing.length} item${missing.length === 1 ? '' : 's'} a la lista 🛒`);
-            } catch (e) { toast(e?.message || 'Error', 'error'); }
+              toast(t('recipes.detail.sentToList', { n: missing.length }));
+            } catch (e) { toast(errMsg(e), 'error'); }
           },
         },
       });
@@ -246,8 +250,8 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
         <p style={{ fontSize: 14, color: pal.inkSoft, marginTop: 6 }}>{r.desc}</p>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-          <Stat icon="⏱" label="Tiempo" value={`${r.time} min`} />
-          <Stat icon="🍳" label="A fregar" value={`${r.effort}`} />
+          <Stat icon="⏱" label={t('recipes.detail.time')} value={t('common.minutesShort', { n: r.time })} />
+          <Stat icon="🍳" label={t('recipes.detail.toWash')} value={`${r.effort}`} />
           <ServingsStat servings={r.servings} baseServings={baseServings} scaling={scaling}
             onChange={changeServings} />
         </div>
@@ -270,7 +274,7 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
               <span style={{ fontSize: 20, lineHeight: 1 }}>{isPartial ? '⚠' : '✗'}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
-                  {isPartial ? 'Te falta poco' : 'Te faltan ingredientes'}
+                  {isPartial ? t('recipes.detail.almostThere') : t('recipes.detail.missingIngredients')}
                 </div>
                 <div style={{ fontSize: 13, lineHeight: 1.4 }}>
                   {missingNames.join(', ')}
@@ -290,13 +294,13 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           }}>
             <span>✨</span>
-            <span>Reajustar cantidades para {servings} raciones</span>
+            <span>{t('recipes.detail.rescale', { n: servings })}</span>
           </button>
         </div>
       )}
 
       <div style={{ padding: '22px 20px 8px' }}>
-        <h3 style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 700, color: pal.ink, margin: '0 0 10px' }}>Ingredientes</h3>
+        <h3 style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 700, color: pal.ink, margin: '0 0 10px' }}>{t('recipes.ingredients')}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {r.ingredients.map((ing, i) => (
             <div key={i} style={{
@@ -325,7 +329,7 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
       </div>
 
       <div style={{ padding: '20px 20px 20px' }}>
-        <h3 style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 700, color: pal.ink, margin: '0 0 10px' }}>Pasos</h3>
+        <h3 style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 700, color: pal.ink, margin: '0 0 10px' }}>{t('recipes.steps')}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {r.steps.map((s, i) => (
             <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
@@ -343,7 +347,7 @@ export default function RecipeDetail({ recipeId, onBack, onCooked }) {
 
       <div style={{ position: 'absolute', bottom: 20, left: 20, right: 20, zIndex: 5 }}>
         <Button tone="green" size="xl" fullWidth onClick={handleCooked} icon="fire">
-          ¡Cocinar!&nbsp;<span style={{ fontWeight: 500, opacity: 0.85, fontSize: 13 }}>descontará ingredientes</span>
+          {t('recipes.detail.cook')}&nbsp;<span style={{ fontWeight: 500, opacity: 0.85, fontSize: 13 }}>{t('recipes.detail.cookHint')}</span>
         </Button>
       </div>
 
@@ -378,10 +382,10 @@ const ScalingOverlay = () => {
           animation: 'pulse 1.4s infinite ease-in-out',
         }}>✨</div>
         <div style={{ fontFamily: fonts.display, fontSize: 16, fontWeight: 700, color: pal.ink }}>
-          Reajustando cantidades…
+          {t('recipes.detail.adjusting')}
         </div>
         <div style={{ fontSize: 12, color: pal.inkSoft, textAlign: 'center', maxWidth: 200 }}>
-          La IA está pensando proporciones coherentes (no todo escala 1:1).
+          {t('recipes.detail.adjustingHint')}
         </div>
         <style>{`@keyframes pulse {
           0%, 100% { transform: scale(1); opacity: 1; }
@@ -419,7 +423,7 @@ const ServingsStat = ({ servings, baseServings, scaling, onChange }) => {
     }}>
       <div style={{ fontSize: 18 }}>👥</div>
       <div style={{ fontSize: 10, color: pal.inkFaint, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-        {scaling ? 'Reescalando…' : 'Raciones'}
+        {scaling ? t('recipes.detail.rescaling') : t('recipes.detail.servings')}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
         <button onClick={() => onChange(servings - 1)} disabled={scaling || servings <= 1} style={{
@@ -441,7 +445,7 @@ const ServingsStat = ({ servings, baseServings, scaling, onChange }) => {
         }}>+</button>
       </div>
       {scaled && !scaling && (
-        <div style={{ fontSize: 9, color: pal.primary, marginTop: 2 }}>✨ ajustado</div>
+        <div style={{ fontSize: 9, color: pal.primary, marginTop: 2 }}>{t('recipes.detail.adjusted')}</div>
       )}
     </div>
   );

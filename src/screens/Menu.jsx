@@ -9,20 +9,25 @@ import { autoPlanMenu, proxyConfigured } from '../api.js';
 import { setMenuSlot as cloudSetMenuSlot } from '../api/resources.js';
 import { inventoryForPrompt } from '../util/aiInventory.js';
 import { useBackClose } from '../util/nav.js';
+import { t, tNodes, errMsg, weekdayShort, weekdayLong } from '../i18n/index.js';
+import { groupLabel, mealLabel } from '../i18n/labels.js';
 
+// Los ids (mon…sun, lunch/dinner) forman las claves de hueco `${día}-${comida}`
+// que se guardan en la base de datos: no cambian. Los nombres se pintan con
+// weekdayShort/Long (lunes = 0, en el mismo orden que DAYS) y mealLabel.
 const DAYS = [
-  { id: 'mon', short: 'L', long: 'Lunes' },
-  { id: 'tue', short: 'M', long: 'Martes' },
-  { id: 'wed', short: 'X', long: 'Miércoles' },
-  { id: 'thu', short: 'J', long: 'Jueves' },
-  { id: 'fri', short: 'V', long: 'Viernes' },
-  { id: 'sat', short: 'S', long: 'Sábado' },
-  { id: 'sun', short: 'D', long: 'Domingo' },
+  { id: 'mon' }, { id: 'tue' }, { id: 'wed' }, { id: 'thu' },
+  { id: 'fri' }, { id: 'sat' }, { id: 'sun' },
 ];
 const MEALS = [
-  { id: 'lunch', label: 'Comida', icon: '☀️' },
-  { id: 'dinner', label: 'Cena', icon: '🌙' },
+  { id: 'lunch', icon: '☀️' },
+  { id: 'dinner', icon: '🌙' },
 ];
+const dayShort = (id) => weekdayShort(DAYS.findIndex((d) => d.id === id));
+const dayLong = (id) => {
+  const i = DAYS.findIndex((d) => d.id === id);
+  return i >= 0 ? weekdayLong(i) : '';
+};
 
 export default function Menu({ onBack, onOpenRecipe }) {
   const { pal, currentHouseholdMeta } = useLF();
@@ -63,7 +68,7 @@ export default function Menu({ onBack, onOpenRecipe }) {
     if (!hid) return;
     const slot = `${day}-${meal}`;
     try { await cloudSetMenuSlot(hid, slot, recipeId || null); }
-    catch (e) { toast(e?.message || 'Error', 'error'); }
+    catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const handleAuto = async () => {
@@ -78,7 +83,7 @@ export default function Menu({ onBack, onOpenRecipe }) {
           }
         }
       }
-      toast('Menú generado (modo local)');
+      toast(t('menu.localDone'));
       return;
     }
     setBusy(true);
@@ -103,9 +108,9 @@ export default function Menu({ onBack, onOpenRecipe }) {
           count++;
         }
       }
-      toast(count > 0 ? `${count} comidas añadidas` : 'Menú al día ✓');
+      toast(count > 0 ? t('menu.added', { n: count }) : t('menu.upToDate'));
     } catch (e) {
-      toast('No he podido generar el menú', 'error');
+      toast(t('menu.genFail'), 'error');
     } finally {
       setBusy(false);
     }
@@ -114,8 +119,8 @@ export default function Menu({ onBack, onOpenRecipe }) {
   return (
     <div style={{ height: '100%', background: pal.bg, display: 'flex', flexDirection: 'column' }}>
       <Header
-        title="Menú semanal"
-        subtitle={`${filled} de ${totalSlots} comidas planificadas`}
+        title={t('menu.title')}
+        subtitle={t('menu.planned', { a: filled, b: totalSlots })}
         left={<IconBtn icon="arrowLeft" onClick={onBack} />}
         right={<IconBtn icon="sparkle" onClick={handleAuto} />} />
 
@@ -138,7 +143,7 @@ export default function Menu({ onBack, onOpenRecipe }) {
           background: pal.primarySoft, color: pal.primary,
           fontSize: 12, lineHeight: 1.5, textAlign: 'center',
         }}>
-          {busy ? 'Pensando un menú con tu inventario…' : <>💡 Toca <strong>✨</strong> arriba para auto-planificar la semana con tu inventario.</>}
+          {busy ? t('menu.thinking') : tNodes('menu.tip', { icon: <strong>✨</strong> })}
         </div>
       </div>
 
@@ -183,7 +188,7 @@ const WeekBar = ({ plan, todayId }) => {
             <div style={{
               fontSize: 10, fontWeight: 700, color: isToday ? pal.primary : pal.inkFaint,
               letterSpacing: '0.04em',
-            }}>{d.short}</div>
+            }}>{dayShort(d.id)}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
               <div style={{ height: 6, borderRadius: 3, background: lunch ? pal.primary : pal.line }}/>
               <div style={{ height: 6, borderRadius: 3, background: dinner ? pal.accent : pal.line }}/>
@@ -213,12 +218,12 @@ const DayCard = ({ day, isToday, plan, recipesById, onAssign, onSlotMenu }) => {
           <span style={{
             fontFamily: fonts.display, fontWeight: 700, fontSize: 16,
             color: isToday ? pal.primary : pal.ink,
-          }}>{day.long}</span>
+          }}>{dayLong(day.id)}</span>
           {isToday && (
             <span style={{
               fontSize: 10, fontWeight: 700, padding: '2px 7px',
               borderRadius: 8, background: pal.primary, color: '#fff',
-            }}>HOY</span>
+            }}>{t('menu.today')}</span>
           )}
         </div>
       </div>
@@ -252,7 +257,7 @@ const MealSlot = ({ meal, recipe, onClick }) => {
         letterSpacing: '0.06em', textTransform: 'uppercase',
       }}>
         <span style={{ fontSize: 12 }}>{meal.icon}</span>
-        <span>{meal.label}</span>
+        <span>{mealLabel(meal.id)}</span>
       </div>
       {recipe ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'stretch' }}>
@@ -265,7 +270,7 @@ const MealSlot = ({ meal, recipe, onClick }) => {
               lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis',
               display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
             }}>{recipe.name}</div>
-            <div style={{ fontSize: 10, color: pal.inkFaint, marginTop: 2 }}>⏱ {recipe.time}m</div>
+            <div style={{ fontSize: 10, color: pal.inkFaint, marginTop: 2 }}>⏱ {t('common.minutesCompact', { n: recipe.time })}</div>
           </div>
         </div>
       ) : (
@@ -280,7 +285,7 @@ const MealSlot = ({ meal, recipe, onClick }) => {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 14, color: pal.inkSoft, lineHeight: 1,
           }}>+</div>
-          <span>Asignar receta</span>
+          <span>{t('menu.assign')}</span>
         </div>
       )}
     </button>
@@ -290,10 +295,9 @@ const MealSlot = ({ meal, recipe, onClick }) => {
 const RecipePickerSheet = ({ slot, recipes, recipesById, currentId, onClose, onPick }) => {
   const { pal, fonts } = useLF();
   const [query, setQuery] = useState('');
-  const groupLabels = { yours: 'Tus recetas', effortless: 'Sin esfuerzo', chef: 'Modo chef', oneOff: 'Te falta 1 ingrediente' };
 
-  const dayLong = (DAYS.find((d) => d.id === slot.day) || {}).long;
-  const mealLabel = (MEALS.find((m) => m.id === slot.meal) || {}).label;
+  const dayName = dayLong(slot.day);
+  const mealName = (MEALS.find((m) => m.id === slot.meal) ? mealLabel(slot.meal) : '');
 
   const filterRecipe = (r) => !query || r.name.toLowerCase().includes(query.toLowerCase());
   const groups = recipes.reduce((acc, r) => {
@@ -316,15 +320,15 @@ const RecipePickerSheet = ({ slot, recipes, recipesById, currentId, onClose, onP
           <div style={{ width: 40, height: 4, borderRadius: 2, background: pal.lineStrong }}/>
         </div>
         <div style={{ padding: '4px 20px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer', padding: 0 }}>Cancelar</button>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer', padding: 0 }}>{t('common.cancel')}</button>
           <div style={{ fontFamily: fonts.body, fontSize: 15, fontWeight: 600 }}>
-            {dayLong} · {mealLabel}
+            {dayName} · {mealName}
           </div>
           <div style={{ width: 60 }}/>
         </div>
         <div style={{ padding: '0 20px 12px' }}>
           <input value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar receta…"
+            placeholder={t('menu.searchRecipe')}
             style={{
               width: '100%', border: 'none',
               background: pal.surface, borderRadius: 12,
@@ -342,7 +346,7 @@ const RecipePickerSheet = ({ slot, recipes, recipesById, currentId, onClose, onP
                 <div style={{
                   fontSize: 11, fontWeight: 700, color: pal.inkFaint,
                   letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8,
-                }}>{groupLabels[gKey] || gKey}</div>
+                }}>{groupLabel(gKey)}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {visible.map((r) => (
                     <PickerRow key={r.id} recipe={r}
@@ -392,8 +396,8 @@ const PickerRow = ({ recipe, selected, onClick }) => {
 const SlotActionsSheet = ({ slot, recipe, onClose, onView, onReplace, onRemove }) => {
   const { pal, fonts } = useLF();
   if (!recipe) return null;
-  const dayLong = (DAYS.find((d) => d.id === slot.day) || {}).long;
-  const mealLabel = (MEALS.find((m) => m.id === slot.meal) || {}).label;
+  const dayName = dayLong(slot.day);
+  const mealName = (MEALS.find((m) => m.id === slot.meal) ? mealLabel(slot.meal) : '');
 
   const Action = ({ icon, label, onClick, danger }) => (
     <button onClick={onClick} style={{
@@ -430,16 +434,16 @@ const SlotActionsSheet = ({ slot, recipe, onClose, onView, onReplace, onRemove }
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: pal.inkFaint, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-              {dayLong} · {mealLabel}
+              {dayName} · {mealName}
             </div>
             <div style={{ fontFamily: fonts.display, fontSize: 17, fontWeight: 700, color: pal.ink, marginTop: 2 }}>
               {recipe.name}
             </div>
           </div>
         </div>
-        <Action icon="👁" label="Ver receta" onClick={() => onView(recipe.id)} />
-        <Action icon="🔄" label="Cambiar receta" onClick={onReplace} />
-        <Action icon="🗑" label="Quitar del menú" onClick={onRemove} danger />
+        <Action icon="👁" label={t('menu.view')} onClick={() => onView(recipe.id)} />
+        <Action icon="🔄" label={t('menu.change')} onClick={onReplace} />
+        <Action icon="🗑" label={t('menu.remove')} onClick={onRemove} danger />
         <div style={{ height: 16 }}/>
       </div>
     </div>
