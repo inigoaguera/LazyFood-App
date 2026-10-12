@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { fmtDate } from '../i18n/index.js';
+import { fmtDate, monthLong } from '../i18n/index.js';
+import { expenseCatLabel } from '../i18n/labels.js';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db.js';
 import { useLF } from '../components/ctx.js';
@@ -12,30 +13,23 @@ import { expenseLines } from '../util/expenseLines.js';
 import { useBackClose } from '../util/nav.js';
 
 // Categorías virtuales para el desglose cuando un item no tiene cat o falta info.
+// El texto se traduce al pintar (expenseCatLabel), no al importar el módulo.
 const FALLBACK_CATS = {
-  super: { label: 'Supermercado', color: '#A8C9A0' },
-  otros: { label: 'Otros', color: '#C4B8A5' },
+  super: { color: '#A8C9A0' },
+  otros: { color: '#C4B8A5' },
 };
 function makeCatInfo(allCategories) {
-  return (cat) => allCategories.find((c) => c.id === cat) || FALLBACK_CATS[cat] || { label: cat, color: '#C4B8A5' };
+  return (cat) => allCategories.find((c) => c.id === cat)
+    || (FALLBACK_CATS[cat] && { label: expenseCatLabel(cat), color: FALLBACK_CATS[cat].color })
+    || { label: cat, color: '#C4B8A5' };
 }
 
-// Periodos de filtro
-const PERIODS = [
-  { id: 'today', label: 'Hoy' },
-  { id: 'week',  label: 'Semana' },
-  { id: 'month', label: 'Este mes' },
-  { id: 'year',  label: 'Año' },
-];
-// Tipos de desglose
-const BREAKDOWNS = [
-  { id: 'category', label: 'Por categoría' },
-  { id: 'store',    label: 'Supermercado' },
-  { id: 'savings',  label: 'Descuentos' },
-];
+// Periodos de filtro y tipos de desglose (las etiquetas salen de expenses.period.* y expenses.breakdown.*).
+const PERIOD_IDS = ['today', 'week', 'month', 'year'];
+const BREAKDOWN_IDS = ['category', 'store', 'savings'];
 
 export default function Expenses({ onBack }) {
-  const { pal, fonts, settings, currentHouseholdMeta } = useLF();
+  const { pal, fonts, settings, currentHouseholdMeta, t } = useLF();
   const hid = currentHouseholdMeta?.id;
   const allCategories = useCategories(hid);
   const catInfo = makeCatInfo(allCategories);
@@ -77,7 +71,7 @@ export default function Expenses({ onBack }) {
 
   return (
     <Screen>
-      <Header big title="Gastos" subtitle={periodLabel(period)}
+      <Header big title={t('expenses.title')} subtitle={periodLabel(period, t)}
         left={<IconBtn icon="chevronLeft" onClick={onBack} />}
         right={<IconBtn icon="calendar" tone="soft" onClick={() => setShowCalendar(true)} />} />
 
@@ -90,7 +84,7 @@ export default function Expenses({ onBack }) {
             </div>
             {period === 'month' && (
               <div style={{ marginBottom: 4, fontSize: 12, color: pct > 85 ? pal.danger : pal.primary, fontWeight: 700 }}>
-                {pct}% de {budget}€
+                {t('expenses.summary.budgetPct', { pct, budget })}
               </div>
             )}
           </div>
@@ -100,14 +94,14 @@ export default function Expenses({ onBack }) {
                 <div style={{ width: `${pct}%`, height: '100%', background: pct > 85 ? pal.danger : pal.primary, borderRadius: 4 }}/>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: pal.inkSoft }}>
-                <span>{pct < 85 ? 'Vas bien' : 'Casi en el límite'}</span>
-                <span>Quedan {(budget - monthTotal).toFixed(2)} €</span>
+                <span>{pct < 85 ? t('expenses.summary.onTrack') : t('expenses.summary.nearLimit')}</span>
+                <span>{t('expenses.summary.remaining', { amount: (budget - monthTotal).toFixed(2) })}</span>
               </div>
             </>
           )}
           {filtered.length === 0 && (
             <div style={{ marginTop: 8, fontSize: 12, color: pal.inkFaint }}>
-              Aún no hay gastos en este periodo.
+              {t('expenses.summary.empty')}
             </div>
           )}
         </Card>
@@ -116,11 +110,11 @@ export default function Expenses({ onBack }) {
       {/* Chips de tiempo */}
       <div style={{ padding: '0 20px 8px' }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: pal.inkFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 6 }}>
-          Periodo
+          {t('expenses.period.label')}
         </div>
         <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
-          {PERIODS.map((p) => (
-            <Chip key={p.id} label={p.label} active={period === p.id} onClick={() => setPeriod(p.id)} />
+          {PERIOD_IDS.map((id) => (
+            <Chip key={id} label={t(`expenses.period.${id}`)} active={period === id} onClick={() => setPeriod(id)} />
           ))}
         </div>
       </div>
@@ -128,11 +122,11 @@ export default function Expenses({ onBack }) {
       {/* Chips de desglose */}
       <div style={{ padding: '8px 20px 12px' }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: pal.inkFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 6 }}>
-          Ver
+          {t('expenses.view')}
         </div>
         <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
-          {BREAKDOWNS.map((b) => (
-            <Chip key={b.id} label={b.label} active={breakdown === b.id} onClick={() => setBreakdown(b.id)} />
+          {BREAKDOWN_IDS.map((id) => (
+            <Chip key={id} label={t(`expenses.breakdown.${id}`)} active={breakdown === id} onClick={() => setBreakdown(id)} />
           ))}
         </div>
       </div>
@@ -147,7 +141,7 @@ export default function Expenses({ onBack }) {
       {/* Lista de últimos gastos */}
       <div style={{ padding: '0 20px 24px' }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: pal.inkSoft, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>
-          Compras del periodo ({filtered.length})
+          {t('expenses.list.title', { n: filtered.length })}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {filtered
@@ -163,9 +157,9 @@ export default function Expenses({ onBack }) {
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: pal.ink }}>{e.store || 'Compra'}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: pal.ink }}>{e.store || t('expenses.list.defaultStore')}</div>
                     <div style={{ fontSize: 11, color: pal.inkSoft, marginTop: 2 }}>
-                      {formatDate(e.date)}{linked.length ? ` · ${linked.length} items` : ''}
+                      {formatDate(e.date)}{linked.length ? ` · ${t('common.items', { n: linked.length })}` : ''}
                     </div>
                   </div>
                   <div style={{ fontFamily: fonts.display, fontSize: 16, fontWeight: 700, color: pal.ink }}>
@@ -176,7 +170,7 @@ export default function Expenses({ onBack }) {
             })}
           {filtered.length === 0 && (
             <div style={{ padding: 20, textAlign: 'center', color: pal.inkFaint, fontSize: 13 }}>
-              No hay compras en este periodo. Pulsa el calendario arriba 👆 para añadir una.
+              {t('expenses.list.empty')}
             </div>
           )}
         </div>
@@ -222,12 +216,12 @@ function filterByPeriod(expenses, period) {
     return true;
   });
 }
-function periodLabel(period) {
+function periodLabel(period, t) {
   const d = new Date();
   if (period === 'today') return fmtDate(d, { weekday: 'long', day: 'numeric', month: 'long' });
-  if (period === 'week') return 'Esta semana';
-  if (period === 'year') return `Año ${d.getFullYear()}`;
-  return ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][d.getMonth()] + ' ' + d.getFullYear();
+  if (period === 'week') return t('expenses.period.thisWeek');
+  if (period === 'year') return t('expenses.period.yearOf', { year: d.getFullYear() });
+  return monthLong(d.getMonth()) + ' ' + d.getFullYear();
 }
 function formatDate(s) {
   if (!s) return '—';
@@ -239,7 +233,7 @@ function formatDate(s) {
 // ─── Breakdowns ──────────────────────────────────────────────────────
 
 const CategoryBreakdown = ({ expenses, itemsByExpense, chartVariant, catInfo }) => {
-  const { pal } = useLF();
+  const { pal, t } = useLF();
   // Agregamos por categoría usando el desglose GUARDADO en cada compra (o los
   // items vivos vinculados si es una compra antigua sin snapshot).
   // Si la suma de líneas no llega al total del expense, el resto va a "Otros"
@@ -256,7 +250,7 @@ const CategoryBreakdown = ({ expenses, itemsByExpense, chartVariant, catInfo }) 
         byCat[c] = (byCat[c] || 0) + price;
         itemsSum += price;
       }
-      if (total > itemsSum + 0.01) {
+      if (total > itemsSum + 0.01) { // i18n-ignore (comparación, no es texto)
         byCat.otros = (byCat.otros || 0) + (total - itemsSum);
       }
     } else {
@@ -271,10 +265,10 @@ const CategoryBreakdown = ({ expenses, itemsByExpense, chartVariant, catInfo }) 
     })
     .filter((x) => x.amount > 0)
     .sort((a, b) => b.amount - a.amount);
-  if (arr.length === 0) return <Card><Empty pal={pal} text="Aún sin desglose por categoría" /></Card>;
+  if (arr.length === 0) return <Card><Empty pal={pal} text={t('expenses.byCategory.empty')} /></Card>;
   return (
     <Card>
-      <Title>Por categoría</Title>
+      <Title>{t('expenses.breakdown.category')}</Title>
       {chartVariant === 'donut' && <DonutChart data={arr} />}
       {chartVariant === 'bars' && <BarChart data={arr} />}
       {chartVariant === 'treemap' && <TreemapChart data={arr} />}
@@ -283,18 +277,18 @@ const CategoryBreakdown = ({ expenses, itemsByExpense, chartVariant, catInfo }) 
 };
 
 const StoreBreakdown = ({ expenses }) => {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const byStore = {};
   for (const e of expenses) {
-    const k = e.store || 'Sin nombre';
+    const k = e.store || t('common.noName');
     byStore[k] = (byStore[k] || 0) + (Number(e.amount) || 0);
   }
   const arr = Object.entries(byStore).map(([k, v]) => ({ key: k, amount: v })).sort((a, b) => b.amount - a.amount);
-  if (arr.length === 0) return <Card><Empty pal={pal} text="Aún sin compras registradas" /></Card>;
+  if (arr.length === 0) return <Card><Empty pal={pal} text={t('expenses.byStore.empty')} /></Card>;
   const max = arr[0].amount || 1;
   return (
     <Card>
-      <Title>Supermercados</Title>
+      <Title>{t('expenses.byStore.title')}</Title>
       {arr.map((s, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < arr.length - 1 ? `0.5px solid ${pal.line}` : 'none' }}>
           <span style={{
@@ -315,9 +309,9 @@ const StoreBreakdown = ({ expenses }) => {
 };
 
 const SavingsBreakdown = ({ expenses, savedTotal }) => {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const withSavings = expenses.filter((e) => Number(e.savedOnDiscounts) > 0).sort((a, b) => Number(b.savedOnDiscounts) - Number(a.savedOnDiscounts));
-  if (savedTotal === 0) return <Card><Empty pal={pal} text="No has aprovechado ofertas en este periodo" /></Card>;
+  if (savedTotal === 0) return <Card><Empty pal={pal} text={t('expenses.savings.empty')} /></Card>;
   return (
     <>
       <div style={{
@@ -326,18 +320,18 @@ const SavingsBreakdown = ({ expenses, savedTotal }) => {
       }}>
         <span style={{ fontSize: 28 }}>💸</span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, opacity: 0.85 }}>Ahorrado en este periodo</div>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>{t('expenses.savings.saved')}</div>
           <div style={{ fontFamily: fonts.display, fontSize: 22, fontWeight: 700 }}>{savedTotal.toFixed(2)} €</div>
         </div>
-        <span style={{ fontSize: 11, opacity: 0.9 }}>con ofertas</span>
+        <span style={{ fontSize: 11, opacity: 0.9 }}>{t('expenses.savings.withOffers')}</span>
       </div>
       {withSavings.length > 0 && (
         <Card>
-          <Title>Compras con ahorro</Title>
+          <Title>{t('expenses.savings.title')}</Title>
           {withSavings.map((e, i) => (
             <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < withSavings.length - 1 ? `0.5px solid ${pal.line}` : 'none' }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: pal.ink }}>{e.store || 'Compra'}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: pal.ink }}>{e.store || t('expenses.list.defaultStore')}</div>
                 <div style={{ fontSize: 11, color: pal.inkSoft, marginTop: 2 }}>{formatDate(e.date)} · {Number(e.amount).toFixed(2)} €</div>
               </div>
               <div style={{ fontFamily: fonts.display, fontSize: 14, fontWeight: 700, color: pal.primary }}>
@@ -362,7 +356,7 @@ const Empty = ({ pal, text }) => (
 // ─── Charts (igual que antes pero con datos dinámicos) ──────────────
 
 const DonutChart = ({ data }) => {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const total = data.reduce((a, b) => a + b.amount, 0);
   let acc = 0;
   const R = 55, C = 2 * Math.PI * R;
@@ -380,7 +374,7 @@ const DonutChart = ({ data }) => {
             transform="rotate(-90 70 70)" />;
         })}
         <text x="70" y="68" textAnchor="middle" fontFamily={fonts.display} fontSize="22" fontWeight="800" fill={pal.ink}>{total.toFixed(0)}€</text>
-        <text x="70" y="84" textAnchor="middle" fontSize="9" fill={pal.inkSoft}>total</text>
+        <text x="70" y="84" textAnchor="middle" fontSize="9" fill={pal.inkSoft}>{t('expenses.chart.total')}</text>
       </svg>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
         {data.slice(0, 5).map((c, i) => (

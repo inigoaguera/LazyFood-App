@@ -1,20 +1,22 @@
+import { t } from '../i18n/index.js';
+
 export const LF_FONTS = {
   playful: {
-    name: 'Playful',
+    get name() { return t('profile.font.playful'); },
     display: "'Fraunces', Georgia, serif",
     body: "'DM Sans', system-ui, sans-serif",
     mono: "'JetBrains Mono', ui-monospace, monospace",
     googleImport: 'family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500',
   },
   clean: {
-    name: 'Clean',
+    get name() { return t('profile.font.clean'); },
     display: "'Instrument Serif', Georgia, serif",
     body: "'Instrument Sans', system-ui, sans-serif",
     mono: "'JetBrains Mono', ui-monospace, monospace",
     googleImport: 'family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500',
   },
   rounded: {
-    name: 'Rounded',
+    get name() { return t('profile.font.rounded'); },
     display: "'Nunito', system-ui, sans-serif",
     body: "'Nunito', system-ui, sans-serif",
     mono: "'JetBrains Mono', ui-monospace, monospace",

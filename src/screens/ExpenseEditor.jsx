@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLF } from '../components/ctx.js';
+import { errMsg } from '../i18n/index.js';
+import { expenseCatLabel, unitLabel } from '../i18n/labels.js';
 import { toast } from '../components/base.jsx';
 import {
   create as resourceCreate, patch as resourcePatch, remove as resourceRemove,
@@ -16,7 +18,7 @@ import { expenseLines, makeLine, linesTotal } from '../util/expenseLines.js';
 // de la nevera: el ticket queda como documento histórico aunque los alimentos ya
 // se hayan consumido.
 export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, hid, onClose, onSaved }) {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const allCategories = useCategories(hid);
   const editing = !!expense?.id;
   const [date, setDate] = useState(expense?.date || defaultDate || localISODate());
@@ -45,10 +47,10 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
   const removeLine = (id) => setLines((xs) => xs.filter((l) => l.id !== id));
 
   const save = async () => {
-    if (!store.trim()) { toast('Pon dónde compraste', 'error'); return; }
+    if (!store.trim()) { toast(t('expenses.editor.storeRequired'), 'error'); return; }
     // 0 es un total válido: una compra pagada entera con vale o puntos. El
     // `!total` de antes lo rechazaba junto con el vacío.
-    if (!Number.isFinite(total) || total < 0) { toast('Pon un total válido', 'error'); return; }
+    if (!Number.isFinite(total) || total < 0) { toast(t('expenses.editor.totalInvalid'), 'error'); return; }
     setBusy(true);
     try {
       const payload = {
@@ -64,23 +66,23 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
       } else {
         await resourceCreate('expenses', hid, payload);
       }
-      toast(editing ? 'Cambios guardados' : 'Gasto añadido');
+      toast(editing ? t('common.changesSaved') : t('expenses.editor.added'));
       await syncHousehold(hid);
       onSaved?.();
     } catch (e) {
-      toast(e?.message || 'Error', 'error');
+      toast(errMsg(e), 'error');
     } finally { setBusy(false); }
   };
 
   const handleDelete = async () => {
     if (!editing) return;
-    if (!confirm('¿Borrar este gasto? Se pierde el registro de la compra y su desglose. Los alimentos siguen en el inventario.')) return;
+    if (!confirm(t('expenses.editor.confirmDelete'))) return;
     try {
       await resourceRemove('expenses', hid, expense.id);
-      toast('Gasto borrado');
+      toast(t('expenses.editor.deleted'));
       await syncHousehold(hid);
       onSaved?.();
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   return (
@@ -94,44 +96,44 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
         padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         borderBottom: `0.5px solid ${pal.line}`,
       }}>
-        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer' }}>Cancelar</button>
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer' }}>{t('common.cancel')}</button>
         <div style={{ fontFamily: fonts.display, fontSize: 17, fontWeight: 700, color: pal.ink }}>
-          {editing ? 'Editar compra' : 'Nueva compra'}
+          {editing ? t('expenses.editor.titleEdit') : t('expenses.editor.titleNew')}
         </div>
         <button onClick={save} disabled={busy} style={{
           background: 'transparent', border: 'none',
           color: pal.primary, fontSize: 14, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
-        }}>{busy ? '…' : 'Guardar'}</button>
+        }}>{busy ? '…' : t('common.save')}</button>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{ flex: 1 }}>
-            <Field label="Fecha">
+            <Field label={t('expenses.editor.date')}>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle(pal)} />
             </Field>
           </div>
           <div style={{ flex: 2 }}>
-            <Field label="Supermercado">
+            <Field label={t('expenses.editor.store')}>
               <input value={store} onChange={(e) => setStore(e.target.value)}
-                placeholder="Mercadona, Lidl…" style={inputStyle(pal)} />
+                placeholder={t('expenses.editor.storePlaceholder')} style={inputStyle(pal)} />
             </Field>
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{ flex: 1 }}>
-            <Field label="Total (€)">
+            <Field label={t('expenses.editor.total')}>
               <input type="number" inputMode="decimal" value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder={itemsSum.toFixed(2)} style={inputStyle(pal)} />
               <div style={{ fontSize: 10, color: pal.inkFaint, marginTop: 4 }}>
-                Suma items: {itemsSum.toFixed(2)}€
+                {t('expenses.editor.itemsSum', { amount: itemsSum.toFixed(2) })}
               </div>
             </Field>
           </div>
           <div style={{ flex: 1 }}>
-            <Field label="Ahorro ofertas (€)">
+            <Field label={t('expenses.editor.savedOnOffers')}>
               <input type="number" inputMode="decimal" value={saved}
                 onChange={(e) => setSaved(e.target.value)}
                 placeholder="0" style={inputStyle(pal)} />
@@ -146,30 +148,28 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
         }}>
           <span style={{ fontSize: 20 }}>📷</span>
           <div style={{ flex: 1, fontSize: 11, color: pal.inkSoft, lineHeight: 1.4 }}>
-            La foto del ticket se podrá guardar en cuanto activemos R2 (próximamente).
+            {t('expenses.editor.receiptPhoto')}
           </div>
         </div>
 
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <Label>Productos comprados ({lines.length})</Label>
+            <Label>{t('expenses.editor.productsBought', { n: lines.length })}</Label>
             <button onClick={addLine} style={{
               background: pal.primarySoft, color: pal.primary,
               border: 'none', borderRadius: 10, padding: '6px 12px',
               fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>+ Añadir</button>
+            }}>{t('expenses.editor.add')}</button>
           </div>
           <div style={{ fontSize: 11, color: pal.inkFaint, marginBottom: 8, lineHeight: 1.4 }}>
-            Es el desglose del ticket y se guarda para siempre. Editarlo aquí no cambia tu inventario:
-            aunque te comas los alimentos, la compra sigue registrada con su precio y categoría.
+            {t('expenses.editor.breakdownNote')}
           </div>
           {legacy && lines.length > 0 && (
             <div style={{
               fontSize: 11, color: pal.inkSoft, marginBottom: 8, lineHeight: 1.4,
               background: pal.primarySoft, borderRadius: 10, padding: 10,
             }}>
-              Esta compra es anterior a los tickets permanentes. Al guardar, este desglose queda
-              fijado y ya no se perderá al consumir los alimentos.
+              {t('expenses.editor.legacyNote')}
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -180,7 +180,7 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
             ))}
             {lines.length === 0 && (
               <div style={{ padding: 14, fontSize: 12, color: pal.inkFaint, textAlign: 'center' }}>
-                Sin productos. Toca "Añadir" o deja sólo el total.
+                {t('expenses.editor.noProducts')}
               </div>
             )}
           </div>
@@ -192,7 +192,7 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
             background: pal.dangerSoft, border: 'none', borderRadius: 12,
             color: pal.danger, fontSize: 13, fontWeight: 700, cursor: 'pointer',
           }}>
-            🗑 Borrar este gasto
+            {t('expenses.editor.deleteBtn')}
           </button>
         )}
       </div>
@@ -201,9 +201,10 @@ export default function ExpenseEditor({ expense, linkedItems = [], defaultDate, 
 }
 
 const LineEditor = ({ line, pal, allCategories, onChange, onRemove }) => {
+  const { t } = useLF();
   const [open, setOpen] = useState(!line.name);
   const catLabel = allCategories.find((c) => c.id === line.cat)?.label
-    || (line.cat === 'otros' ? 'Otros' : line.cat);
+    || (line.cat === 'otros' ? expenseCatLabel('otros') : line.cat);
   return (
     <div style={{
       background: pal.surface, borderRadius: 10, border: `0.5px solid ${pal.line}`, overflow: 'hidden',
@@ -213,9 +214,9 @@ const LineEditor = ({ line, pal, allCategories, onChange, onRemove }) => {
       }}>
         <span style={{ fontSize: 20, width: 28, textAlign: 'center' }}>{line.emoji || '🛒'}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: pal.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{line.name || 'Sin nombre'}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: pal.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{line.name || t('common.noName')}</div>
           <div style={{ fontSize: 11, color: pal.inkSoft }}>
-            {line.qty || 1} {line.unit || 'uds'}
+            {line.qty || 1} {unitLabel(line.unit || 'uds')}
             {line.price != null ? ` · ${Number(line.price).toFixed(2)}€` : ''}
             {catLabel ? ` · ${catLabel}` : ''}
           </div>
@@ -230,7 +231,7 @@ const LineEditor = ({ line, pal, allCategories, onChange, onRemove }) => {
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
             <input value={line.emoji || ''} onChange={(e) => onChange({ emoji: e.target.value })}
               style={{ width: 44, padding: 8, fontSize: 18, textAlign: 'center', border: 'none', background: pal.bg, borderRadius: 8 }} />
-            <input value={line.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="Producto"
+            <input value={line.name} onChange={(e) => onChange({ name: e.target.value })} placeholder={t('expenses.editor.productPlaceholder')}
               style={{ flex: 1, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8 }} />
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
@@ -239,7 +240,7 @@ const LineEditor = ({ line, pal, allCategories, onChange, onRemove }) => {
               placeholder="1"
               style={{ width: 60, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8, textAlign: 'center' }} />
             <input value={line.unit || ''} onChange={(e) => onChange({ unit: e.target.value })}
-              placeholder="uds"
+              placeholder={unitLabel('uds')}
               style={{ width: 80, padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8, textAlign: 'center' }} />
             <div style={{
               flex: 1, display: 'flex', alignItems: 'center',
@@ -256,7 +257,7 @@ const LineEditor = ({ line, pal, allCategories, onChange, onRemove }) => {
             <select value={line.cat || 'otros'} onChange={(e) => onChange({ cat: e.target.value })}
               style={{ width: '100%', padding: 8, fontSize: 13, border: 'none', background: pal.bg, borderRadius: 8 }}>
               {allCategories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-              <option value="otros">Otros</option>
+              <option value="otros">{expenseCatLabel('otros')}</option>
             </select>
           </div>
         </div>
