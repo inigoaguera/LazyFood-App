@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { fmtDate } from '../i18n/index.js';
 import { useLF } from '../components/ctx.js';
 import { LF_SHADOWS } from '../tokens/palettes.js';
 import LFIcon from '../icons/LFIcon.jsx';
@@ -152,7 +153,7 @@ export default function ExpenseCalendar({ expenses, itemsByExpense = {}, hid, on
 const DayDetail = ({ date, expenses, itemsByExpense = {}, onAddNew, onEdit }) => {
   const { pal, fonts } = useLF();
   const total = expenses.reduce((a, b) => a + (Number(b.amount) || 0), 0);
-  const niceDate = new Date(date + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+  const niceDate = fmtDate(date, { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
     <div>

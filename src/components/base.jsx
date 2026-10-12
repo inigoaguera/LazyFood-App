@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useLF, haptic } from './ctx.js';
 import { LF_SHADOWS } from '../tokens/palettes.js';
 import LFIcon from '../icons/LFIcon.jsx';
+import { t } from '../i18n/index.js';
 
 // ─── Screen ─────────────────────────────────────────────────────────────
 export const Screen = ({ children, scrollable = true, padBottom = 100, style }) => (
@@ -128,10 +129,10 @@ export const Button = ({ children, onClick, tone = 'primary', size = 'md', icon,
 export const BottomNav = ({ active, onNav, onScan }) => {
   const { pal } = useLF();
   const tabs = [
-    { id: 'home',     label: 'Inicio',    icon: 'home' },
-    { id: 'list',     label: 'Todo',      icon: 'list' },
-    { id: 'recipes',  label: 'Recetas',   icon: 'chef', dot: true },
-    { id: 'expenses', label: 'Gastos',    icon: 'chart' },
+    { id: 'home',     label: t('common.nav.home'),    icon: 'home' },
+    { id: 'list',     label: t('common.nav.list'),      icon: 'list' },
+    { id: 'recipes',  label: t('common.nav.recipes'),   icon: 'chef', dot: true },
+    { id: 'expenses', label: t('common.nav.expenses'),    icon: 'chart' },
   ];
   return (
     <div style={{

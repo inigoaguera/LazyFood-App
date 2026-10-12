@@ -4,9 +4,11 @@ import { Button, toast } from '../components/base.jsx';
 import { requestMagicLink, verifyOtpCode } from '../api/session.js';
 import { diagnose } from '../util/jwt.js';
 import { isDebugActive } from '../util/debug.js';
+import { LANGS } from '../i18n/index.js';
+import { changeLang } from '../i18n/switch.js';
 
 export default function Login({ pendingInvite }) {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, lang } = useLF();
   const [email, setEmail] = useState('');
   const [phase, setPhase] = useState('form'); // form | sending | sent | error
   const [errorMsg, setErrorMsg] = useState('');
@@ -42,7 +44,7 @@ export default function Login({ pendingInvite }) {
     setPhase('sending');
     setErrorMsg('');
     try {
-      await requestMagicLink(email.trim().toLowerCase());
+      await requestMagicLink(email.trim().toLowerCase(), lang);
       setPhase('sent');
     } catch (e) {
       setErrorMsg(e?.message || 'No he podido enviar el email');
@@ -75,6 +77,18 @@ export default function Login({ pendingInvite }) {
       height: '100%', display: 'flex', flexDirection: 'column',
       background: pal.bg, padding: '40px 28px',
     }}>
+      {/* Idioma antes de entrar: se guarda en este móvil y pasa a la cuenta al iniciar sesión. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: -20 }}>
+        {Object.keys(LANGS).map((k) => (
+          <button key={k} onClick={() => changeLang(k)} style={{
+            padding: '5px 10px', borderRadius: 12, cursor: 'pointer',
+            fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
+            background: lang === k ? pal.ink : 'transparent',
+            color: lang === k ? pal.bg : pal.inkSoft,
+            border: `0.5px solid ${lang === k ? pal.ink : pal.line}`,
+          }}>{k.toUpperCase()}</button>
+        ))}
+      </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <div onClick={onAvocadoTap} style={{
           fontSize: 64, textAlign: 'center', marginBottom: 16,

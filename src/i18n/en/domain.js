@@ -1,0 +1,80 @@
+// Namespace 'domain' — see es/domain.js.
+export default {
+  cat: {
+    lacteo: 'Dairy',
+    verdura: 'Vegetables',
+    fruta: 'Fruit',
+    carne: 'Meat',
+    pescado: 'Fish',
+    pasta: 'Pasta & grains',
+    conserva: 'Tins & jars',
+    salsa: 'Sauces',
+    especia: 'Spices',
+    bebida: 'Drinks',
+    snack: 'Snacks',
+    congelado: 'Frozen',
+  },
+  expenseCat: {
+    super: 'Supermarket',
+    otros: 'Other',
+  },
+  loc: {
+    fridge: 'Fridge',
+    freezer: 'Freezer',
+    pantry: 'Pantry',
+  },
+  locDesc: {
+    fridge: 'Keep it cold',
+    freezer: 'Pauses the expiry countdown',
+    pantry: 'Room temperature',
+  },
+  type: {
+    discrete: 'Units',
+    continuous: 'Continuous',
+  },
+  shape: {
+    bottle: 'Bottle',
+    jar: 'Jar',
+    sack: 'Bag',
+  },
+  unit: {
+    uds: 'pcs',
+    ud: 'pc',
+    latas: 'cans',
+    paquetes: 'packs',
+    L: 'L',
+    ml: 'ml',
+    kg: 'kg',
+    g: 'g',
+  },
+  group: {
+    yours: 'Your recipes',
+    effortless: 'Zero effort',
+    chef: 'Chef mode',
+    oneOff: 'Missing 1 ingredient',
+  },
+  meal: {
+    lunch: 'Lunch',
+    dinner: 'Dinner',
+  },
+  role: {
+    owner: 'Owner',
+    member: 'Member',
+  },
+  stock: {
+    ready: 'You have it all',
+    partial: 'Almost there',
+    missing: 'Missing some',
+  },
+  expiry: {
+    frozen: 'frozen',
+    sealed: 'no expiry',
+    expired: 'expired',
+    tomorrow: 'tomorrow',
+    inDays: 'in {n} days',
+    inWeeks: 'in {n} wk',
+    inMonths: 'in {n} mo',
+    days_one: '{n} day',
+    days_other: '{n} days',
+  },
+};

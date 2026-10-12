@@ -15,12 +15,14 @@ import { buildSamplePayload } from '../data/seed.js';
 import { useCategories } from '../util/categories.js';
 import InviteShare from './InviteShare.jsx';
 import { useBackClose } from '../util/nav.js';
+import { LANGS, errMsg } from '../i18n/index.js';
+import { changeLang } from '../i18n/switch.js';
 
 const HOUSEHOLD_COLORS = ['#4A7C3A', '#0F9D6E', '#C25A3C', '#7FB0C4', '#E8A838', '#5DB8C4', '#B85AAB'];
 const AVATAR_EMOJIS = ['🥑', '🦊', '🐱', '🐶', '🐻', '🐼', '🦁', '🐯', '🐸', '🐵', '🦄', '🐝', '🍓', '🍑', '🥕', '🥬', '🍕', '🍔', '☕', '🌮', '🌶️', '🍳', '🍰', '🧁'];
 
 export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
-  const { pal, fonts, currentHousehold, me: cachedMe } = useLF();
+  const { pal, fonts, currentHousehold, me: cachedMe, lang, t } = useLF();
   const [me, setMe] = useState(cachedMe || null);
   const [household, setHousehold] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
@@ -43,6 +45,14 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
     const next = { ...(me?.prefs || {}), [k]: v };
     await patchMe({ prefs: next });
     setMe((cur) => cur ? { ...cur, prefs: next } : cur);
+  };
+
+  const handleLang = async (k) => {
+    if (k === lang) return;
+    try {
+      await changeLang(k);
+      setMe((cur) => (cur ? { ...cur, prefs: { ...(cur.prefs || {}), lang: k } } : cur));
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   const handleLeave = async () => {
@@ -231,6 +241,28 @@ export default function Profile({ onBack, onSwitchHousehold, onLogout }) {
             <CustomCategoriesSection hid={household.id} />
           </>
         )}
+
+        {/* ─── Idioma ─────────────────────────────────────────── */}
+        <SectionTitle>{t('common.lang.title')}</SectionTitle>
+        <Card style={{ padding: 14, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 10 }}>
+            {Object.entries(LANGS).map(([k, v]) => (
+              <button key={k} onClick={() => handleLang(k)} style={{
+                flex: 1, padding: '12px 8px', borderRadius: 12, cursor: 'pointer',
+                background: pal.bg,
+                border: lang === k ? `2px solid ${pal.ink}` : `0.5px solid ${pal.line}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                fontSize: 14, fontWeight: 700, color: pal.ink,
+              }}>
+                <span style={{ fontSize: 18 }}>{v.flag}</span>
+                <span>{v.label}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: pal.inkSoft, marginTop: 10, lineHeight: 1.4 }}>
+            {t('common.lang.hint')}
+          </div>
+        </Card>
 
         {/* ─── Tema ───────────────────────────────────────────── */}
         <SectionTitle>Tema (tuyo, no compartido)</SectionTitle>

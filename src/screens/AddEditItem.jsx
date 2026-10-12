@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { fmtDate } from '../i18n/index.js';
 import { useLF, haptic } from '../components/ctx.js';
 import { useCategories } from '../util/categories.js';
 import { LF_SHADOWS } from '../tokens/palettes.js';
@@ -217,7 +218,7 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
             )}
             {data.openedAt && (
               <div style={{ marginTop: 8, fontSize: 11, color: pal.inkSoft }}>
-                Abierto el {new Date(data.openedAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                Abierto el {fmtDate(data.openedAt, { day: 'numeric', month: 'short' })}
               </div>
             )}
           </Card>

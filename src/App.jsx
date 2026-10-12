@@ -5,7 +5,7 @@ import { LF_PALETTES, LF_DENSITIES } from './tokens/palettes.js';
 import { LF_FONTS, lfEnsureFont } from './tokens/fonts.js';
 import { db, setSetting, hasLegacyData } from './db.js';
 import { onUnauthorized } from './api/client.js';
-import { fetchMe, setCurrentHousehold, patchHousehold } from './api/session.js';
+import { fetchMe, setCurrentHousehold, patchHousehold, patchMe } from './api/session.js';
 import { syncHousehold, setupFocusSync } from './api/sync.js';
 import { getJwt } from './util/jwt.js';
 import { goBack, useBackLayers, useBackClose } from './util/nav.js';
@@ -13,6 +13,7 @@ import { goBack, useBackLayers, useBackClose } from './util/nav.js';
 import { BottomNav, ToastHost } from './components/base.jsx';
 import DebugOverlay from './screens/DebugOverlay.jsx';
 import { isDebugActive } from './util/debug.js';
+import { t, setLang, normalizeLang, storedLang, detectLang, rememberLangLocally } from './i18n/index.js';
 import Login from './screens/Login.jsx';
 import Verify from './screens/Verify.jsx';
 import HouseholdPicker from './screens/HouseholdPicker.jsx';
@@ -90,13 +91,29 @@ export default function App() {
 
   useEffect(() => { lfEnsureFont(fontKey); }, [fontKey]);
 
+  // Idioma: el de tu cuenta (prefs) manda; antes del login, el elegido en este
+  // móvil (settings.lang / localStorage) y si no, el del sistema. Se fija aquí,
+  // en el render, para que los hijos ya pinten con el idioma nuevo.
+  const lang = setLang(
+    normalizeLang(userPrefs.lang) || normalizeLang(settings.lang) || storedLang() || detectLang()
+  );
+  useEffect(() => { rememberLangLocally(lang); }, [lang]);
+
+  // Primer login (o cuenta anterior a esta función): la cuenta aún no tiene
+  // idioma, así que se queda con el que estás usando ahora.
+  useEffect(() => {
+    if (me?.id && me.prefs && !normalizeLang(me.prefs.lang)) {
+      patchMe({ prefs: { ...me.prefs, lang } }).catch(() => {});
+    }
+  }, [me?.id, me?.prefs?.lang]);
+
   const pal = LF_PALETTES[palette] || LF_PALETTES.huerto;
   const fonts = LF_FONTS[fontKey] || LF_FONTS.playful;
   const dens = LF_DENSITIES[densityKey] || LF_DENSITIES.regular;
   const ctx = useMemo(() => ({
-    pal, fonts, dens, settings,
+    pal, fonts, dens, settings, lang, t,
     me, currentHousehold, currentHouseholdMeta: myHouseholdMeta,
-  }), [pal, fonts, dens, settings, me, currentHousehold, myHouseholdMeta]);
+  }), [pal, fonts, dens, settings, lang, me, currentHousehold, myHouseholdMeta]);
 
   // ─── URL params (magic link / invite) ────────────────────
   const [urlParams] = useState(() => readUrlParams());
@@ -211,7 +228,7 @@ export default function App() {
       return <div style={{
         height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
         color: pal.inkSoft, fontSize: 14,
-      }}>Cargando…</div>;
+      }}>{t('common.loading')}</div>;
     }
     // 4. ¿Hay datos legacy v1 sin importar y aún no tienes casas? → Wizard
     if (legacyChecked && hasLegacy && myHouseholds.length === 0 && route !== 'createHousehold' && route !== 'joinHousehold') {

@@ -1,4 +1,5 @@
 import { expiryStatus } from './expires.js';
+import { t } from '../i18n/index.js';
 
 // Texto del inventario para los prompts de IA.
 //
@@ -31,9 +32,9 @@ export function inventoryForPrompt(items = []) {
     const qty = it.type === 'continuous' ? `${it.fill}% (${it.unit})` : `${it.qty} ${it.unit}`;
     const st = expiryStatus(it);
     let exp = '';
-    if (st.days != null && st.days <= 0) exp = ' ⚠ CADUCADO — no lo uses';
-    else if (st.days != null && st.days <= 5) exp = ` ⚠ caduca en ${st.days}d`;
-    else if (st.state === 'frozen') exp = ' ❄ congelado';
+    if (st.days != null && st.days <= 0) exp = ` ${t('ai.inv.expired')}`;
+    else if (st.days != null && st.days <= 5) exp = ` ${t('ai.inv.expiresIn', { n: st.days })}`;
+    else if (st.state === 'frozen') exp = ` ${t('ai.inv.frozen')}`;
     return `- ${it.name}: ${qty}${exp}`;
   }).join('\n');
 }

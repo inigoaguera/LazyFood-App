@@ -12,6 +12,8 @@
 //   - sin itemId, fuzzy match no encuentra nada
 //   - sin itemId, fuzzy match sí encuentra pero stock=0
 
+import { t } from '../i18n/index.js';
+
 export function recipeStockStatus(ingredients, items) {
   if (!ingredients?.length) return { state: 'ready', missing: [], partial: [], total: 0 };
   const missing = [];
@@ -41,7 +43,7 @@ export function recipeStockStatus(ingredients, items) {
 
 // Pequeña pill visual para usar en cards. Tonos suaves (crema) con icono saturado.
 export function stockBadge(state, pal) {
-  if (state === 'ready') return { icon: '✓', color: pal.primary, bg: pal.primarySoft, label: 'Tienes todo' };
-  if (state === 'partial') return { icon: '⚠', color: pal.ink, bg: pal.accentSoft, label: 'Casi todo' };
-  return { icon: '✗', color: pal.danger, bg: pal.dangerSoft, label: 'Te faltan' };
+  if (state === 'ready') return { icon: '✓', color: pal.primary, bg: pal.primarySoft, label: t('domain.stock.ready') };
+  if (state === 'partial') return { icon: '⚠', color: pal.ink, bg: pal.accentSoft, label: t('domain.stock.partial') };
+  return { icon: '✗', color: pal.danger, bg: pal.dangerSoft, label: t('domain.stock.missing') };
 }

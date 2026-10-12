@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { fmtDateTime } from '../i18n/index.js';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getSetting, setSetting, RECIPE_USES_EXPIRING_BY_NAME } from '../db.js';
 import { useLF } from '../components/ctx.js';
@@ -310,7 +311,7 @@ export default function RecipeHub({ onBack, onOpenRecipe, onOpenChat }) {
 const InspireBanner = ({ aiData, aiBusy, onInspire, hasItems }) => {
   const { pal, fonts } = useLF();
   const generatedDate = aiData?.generatedAt
-    ? new Date(aiData.generatedAt).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    ? fmtDateTime(aiData.generatedAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
     : null;
   return (
     <div style={{ padding: '0 20px 16px' }}>

@@ -3,8 +3,10 @@ import { api } from './client.js';
 import { getSetting, setSetting } from '../db.js';
 import { saveJwt, clearJwt } from '../util/jwt.js';
 
-export async function requestMagicLink(email) {
-  return api('/auth/request', { method: 'POST', body: { email }, auth: false });
+// `lang` decide el idioma del email: aún no hay cuenta (o no hay sesión) de
+// donde sacarlo, así que lo manda el cliente.
+export async function requestMagicLink(email, lang) {
+  return api('/auth/request', { method: 'POST', body: { email, lang }, auth: false });
 }
 
 export async function verifyMagicLink(token) {

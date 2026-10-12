@@ -8,6 +8,8 @@
 // Los items del inventario siguen guardando `expenseId` (de qué compra vinieron),
 // pero eso ya sólo sirve como fallback para gastos antiguos sin snapshot.
 
+import { t } from '../i18n/index.js';
+
 let seq = 0;
 function newLineId() {
   try {
@@ -24,7 +26,7 @@ export function makeLine(src = {}) {
   const rawQty = src.qty === '' || src.qty == null ? 1 : Number(src.qty);
   return {
     id: src.id || newLineId(),
-    name: (src.name || '').trim() || 'Sin nombre',
+    name: (src.name || '').trim() || t('common.noName'),
     emoji: src.emoji || '🛒',
     cat: src.cat || src.category || 'otros',
     qty: Number.isFinite(rawQty) ? rawQty : 1,

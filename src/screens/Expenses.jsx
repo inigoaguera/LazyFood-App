@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { fmtDate } from '../i18n/index.js';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db.js';
 import { useLF } from '../components/ctx.js';
@@ -223,7 +224,7 @@ function filterByPeriod(expenses, period) {
 }
 function periodLabel(period) {
   const d = new Date();
-  if (period === 'today') return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+  if (period === 'today') return fmtDate(d, { weekday: 'long', day: 'numeric', month: 'long' });
   if (period === 'week') return 'Esta semana';
   if (period === 'year') return `Año ${d.getFullYear()}`;
   return ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][d.getMonth()] + ' ' + d.getFullYear();
@@ -231,7 +232,7 @@ function periodLabel(period) {
 function formatDate(s) {
   if (!s) return '—';
   try {
-    return new Date(s + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+    return fmtDate(s, { day: 'numeric', month: 'short' });
   } catch { return s; }
 }
 
