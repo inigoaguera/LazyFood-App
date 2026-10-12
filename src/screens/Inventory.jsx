@@ -9,6 +9,8 @@ import { patch as resourcePatch, create as resourceCreate, remove as resourceRem
 import { syncHousehold } from '../api/sync.js';
 import { expiryStatus, compareByExpiry, DAY_MS } from '../util/expires.js';
 import { useBackClose } from '../util/nav.js';
+import { errMsg } from '../i18n/index.js';
+import { locLabel, locDesc, unitLabel } from '../i18n/labels.js';
 
 // Detecta si un item está agotado (qty=0 o fill=0)
 const isEmpty = (it) => {
@@ -17,7 +19,7 @@ const isEmpty = (it) => {
 };
 
 export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd }) {
-  const { pal, currentHouseholdMeta } = useLF();
+  const { pal, currentHouseholdMeta, t } = useLF();
   const hid = currentHouseholdMeta?.id;
   const allCategories = useCategories(hid);
   const [loc, setLoc] = useState(initialLoc);
@@ -45,12 +47,11 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
   filtered.forEach((i) => { grouped[i.loc] = grouped[i.loc] || []; grouped[i.loc].push(i); });
 
   const locs = [
-    { id: 'all', label: 'Todo' },
-    { id: 'fridge', label: 'Nevera' },
-    { id: 'freezer', label: 'Congelador' },
-    { id: 'pantry', label: 'Despensa' },
+    { id: 'all', label: t('common.all') },
+    { id: 'fridge', label: locLabel('fridge') },
+    { id: 'freezer', label: locLabel('freezer') },
+    { id: 'pantry', label: locLabel('pantry') },
   ];
-  const locLabel = { fridge: 'Nevera', freezer: 'Congelador', pantry: 'Despensa' };
   const locEmoji = { fridge: '🧊', freezer: '❄️', pantry: '🫙' };
 
   const decrement = async (it) => {
@@ -66,7 +67,7 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
         const next = Math.max(0, (it.fill || 0) - 10);
         await resourcePatch('items', hid, it.id, { fill: next });
       }
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
     haptic();
   };
   // Abre el sheet de destino al deslizar Mover.
@@ -91,7 +92,9 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
         } else {
           await resourcePatch('items', hid, it.id, { qty: +(totalQty - moveQty).toFixed(2) });
         }
-        toast(moveAll ? `${it.name} → lista de compra 🛒` : `${moveQty} de ${it.name} → compra 🛒`);
+        toast(moveAll
+          ? t('inventory.toast.toShopping', { name: it.name })
+          : t('inventory.toast.toShoppingPart', { qty: moveQty, name: it.name }));
         return;
       }
 
@@ -113,8 +116,8 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
         const patch = buildLocPatch(dest, it.frozenAt != null);
         await resourcePatch('items', hid, it.id, patch);
         toast(dest === 'freezer' && patch.frozenAt
-          ? `🧊 ${it.name} congelado`
-          : `Movido a ${locLabel[dest]}`);
+          ? t('inventory.toast.frozen', { name: it.name })
+          : t('inventory.toast.movedTo', { loc: locLabel(dest) }));
       } else {
         // Partial move discreto: crea un nuevo item en dest con moveQty,
         // decrementa el original.
@@ -135,20 +138,20 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
         };
         await resourceCreate('items', hid, newItem);
         await resourcePatch('items', hid, it.id, { qty: +(totalQty - moveQty).toFixed(2) });
-        toast(`${moveQty} de ${it.name} → ${locLabel[dest]}`);
+        toast(t('inventory.toast.partMovedTo', { qty: moveQty, name: it.name, loc: locLabel(dest) }));
       }
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
   const removeItem = async (it) => {
     try {
       await resourceRemove('items', hid, it.id);
-      toast(`${it.name} eliminado`);
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+      toast(t('inventory.toast.removed', { name: it.name }));
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   return (
     <Screen>
-      <Header big title="Todos los alimentos" subtitle={`${filtered.length} items encontrados`}
+      <Header big title={t('inventory.title')} subtitle={t('inventory.found', { n: filtered.length })}
         left={<IconBtn icon="chevronLeft" onClick={onBack} />}
         right={<><IconBtn icon="plus" tone="soft" onClick={onAdd} /><IconBtn icon="more" tone="soft" /></>} />
 
@@ -159,7 +162,7 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
           border: `0.5px solid ${pal.line}`, padding: '10px 14px',
         }}>
           <LFIcon name="search" size={18} color={pal.inkSoft} />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Busca 'tomates', 'leche'…"
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('inventory.searchPlaceholder')}
             style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 14, color: pal.ink }} />
         </div>
       </div>
@@ -172,7 +175,7 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
       </div>
 
       <div style={{ display: 'flex', gap: 6, padding: '0 20px 14px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        <Chip label="Todas" active={cat === 'all'} onClick={() => setCat('all')} />
+        <Chip label={t('inventory.allCats')} active={cat === 'all'} onClick={() => setCat('all')} />
         {allCategories.map((c) => (
           <Chip key={c.id} label={c.label} color={c.color} active={cat === c.id} onClick={() => setCat(c.id)} />
         ))}
@@ -180,9 +183,9 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
 
       <div style={{ padding: '0 20px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 11, color: pal.inkFaint, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-          Ordenado por · caducidad
+          {t('inventory.sortedBy')}
         </div>
-        <div style={{ fontSize: 11, color: pal.inkSoft }}>← desliza para acciones</div>
+        <div style={{ fontSize: 11, color: pal.inkSoft }}>{t('inventory.swipeHint')}</div>
       </div>
 
       <div style={{ padding: '0 20px' }}>
@@ -194,7 +197,7 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
                 fontSize: 12, fontWeight: 700, color: pal.inkSoft, letterSpacing: '0.02em',
               }}>
                 <span>{locEmoji[lkey]}</span>
-                <span>{locLabel[lkey]}</span>
+                <span>{locLabel(lkey)}</span>
                 <span style={{ color: pal.inkFaint, fontWeight: 500 }}>· {list.length}</span>
               </div>
             )}
@@ -204,8 +207,8 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
                 return (
                   <SwipeRow key={it.id} height={68} actions={[
                     { icon: 'minus', label: '-1',       bg: pal.accent, fg: pal.ink, onClick: () => decrement(it) },
-                    { icon: 'move',  label: 'Mover',    bg: pal.cool,   onClick: () => moveLocation(it) },
-                    { icon: 'trash', label: 'Eliminar', bg: pal.danger, onClick: () => removeItem(it) },
+                    { icon: 'move',  label: t('inventory.swipe.move'), bg: pal.cool,   onClick: () => moveLocation(it) },
+                    { icon: 'trash', label: t('common.remove'), bg: pal.danger, onClick: () => removeItem(it) },
                   ]}>
                     <ItemRow item={it} empty={empty} categories={allCategories}
                       onClick={() => empty ? setEmptySheet(it) : onEdit?.(it)} />
@@ -217,7 +220,7 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
         ))}
         {filtered.length === 0 && (
           <div style={{ padding: '40px 20px', textAlign: 'center', color: pal.inkFaint }}>
-            Nada por aquí. Añade algo con el escáner 📸
+            {t('inventory.emptyList')}
           </div>
         )}
       </div>
@@ -242,7 +245,7 @@ export default function Inventory({ initialLoc = 'all', onBack, onEdit, onAdd })
 }
 
 const MoveSheet = ({ item, onClose, onMove }) => {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const isDiscrete = item.type === 'discrete';
   const total = isDiscrete ? Number(item.qty) || 0 : 0;
   const allowPartial = isDiscrete && total > 1;
@@ -252,10 +255,10 @@ const MoveSheet = ({ item, onClose, onMove }) => {
   const display = Number.isInteger(qty) ? qty : Number(qty).toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 
   const options = [
-    { id: 'fridge',   icon: '🧊', label: 'Nevera',     desc: 'Refrigerar' },
-    { id: 'freezer',  icon: '❄️', label: 'Congelador', desc: 'Detiene la cuenta de caducidad' },
-    { id: 'pantry',   icon: '🫙', label: 'Despensa',   desc: 'Conservar a temperatura ambiente' },
-    { id: 'shopping', icon: '🛒', label: 'Lista de la compra', desc: 'Lo quitas del inventario y se añade a la lista' },
+    { id: 'fridge',   icon: '🧊', label: locLabel('fridge'),  desc: locDesc('fridge') },
+    { id: 'freezer',  icon: '❄️', label: locLabel('freezer'), desc: locDesc('freezer') },
+    { id: 'pantry',   icon: '🫙', label: locLabel('pantry'),  desc: locDesc('pantry') },
+    { id: 'shopping', icon: '🛒', label: t('inventory.move.shoppingLabel'), desc: t('inventory.move.shoppingDesc') },
   ].filter((o) => o.id !== item.loc);
 
   return (
@@ -274,7 +277,7 @@ const MoveSheet = ({ item, onClose, onMove }) => {
         </div>
         <div style={{ padding: '10px 22px 14px' }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: pal.inkFaint, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-            Mover
+            {t('inventory.move.title')}
           </div>
           <div style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 700, color: pal.ink, marginTop: 2 }}>
             {item.emoji} {item.name}
@@ -287,13 +290,13 @@ const MoveSheet = ({ item, onClose, onMove }) => {
             background: pal.surface, borderRadius: 14, border: `0.5px solid ${pal.line}`,
           }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: pal.inkSoft, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>
-              ¿Cuánto mueves?
+              {t('inventory.move.howMuch')}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
               <button onClick={() => setQty((q) => Math.max(0.25, +(q - step).toFixed(2)))} style={moveStepBtn(pal, false)}>−</button>
               <div style={{ textAlign: 'center', minWidth: 100 }}>
                 <div style={{ fontFamily: fonts.display, fontSize: 38, fontWeight: 800, color: pal.ink, lineHeight: 1 }}>{display}</div>
-                <div style={{ fontSize: 11, color: pal.inkSoft, marginTop: 2 }}>de {total} {item.unit}</div>
+                <div style={{ fontSize: 11, color: pal.inkSoft, marginTop: 2 }}>{t('inventory.move.ofTotal', { total, unit: unitLabel(item.unit) })}</div>
               </div>
               <button onClick={() => setQty((q) => Math.min(total, +(q + step).toFixed(2)))} style={moveStepBtn(pal, true)}>+</button>
             </div>
@@ -304,7 +307,7 @@ const MoveSheet = ({ item, onClose, onMove }) => {
               border: `0.5px solid ${fineMode ? pal.primary : pal.line}`,
               fontSize: 11, fontWeight: 600, cursor: 'pointer',
             }}>
-              {fineMode ? '🔬 paso 0.25' : 'paso 1 · toca para 0.25'}
+              {fineMode ? t('inventory.step.fine') : t('inventory.step.normal')}
             </button>
           </div>
         )}
@@ -324,7 +327,7 @@ const MoveSheet = ({ item, onClose, onMove }) => {
             </div>
             {allowPartial && (
               <div style={{ fontSize: 11, color: pal.inkFaint, fontWeight: 600 }}>
-                {qty >= total ? 'todo' : `${display} ${item.unit}`}
+                {qty >= total ? t('inventory.move.all') : `${display} ${unitLabel(item.unit)}`}
               </div>
             )}
           </button>
@@ -346,7 +349,7 @@ const moveStepBtn = (pal, primary) => ({
 
 // Sheet que aparece al pulsar un item agotado
 const EmptyItemSheet = ({ item, hid, onClose, onEdit }) => {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const handleAddToShopping = async () => {
     try {
       await resourceCreate('shopping', hid, {
@@ -357,18 +360,18 @@ const EmptyItemSheet = ({ item, hid, onClose, onEdit }) => {
       // Cuando se registre el siguiente ticket entrará de nuevo.
       await resourceRemove('items', hid, item.id);
       await syncHousehold(hid);
-      toast(`${item.name} → lista de compra 🛒`);
+      toast(t('inventory.toast.toShopping', { name: item.name }));
       onClose();
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
   const handleDelete = async () => {
-    if (!confirm(`¿Eliminar "${item.name}" del inventario?`)) return;
+    if (!confirm(t('inventory.soldOut.confirmRemove', { name: item.name }))) return;
     try {
       await resourceRemove('items', hid, item.id);
       await syncHousehold(hid);
-      toast(`${item.name} eliminado`);
+      toast(t('inventory.toast.removed', { name: item.name }));
       onClose();
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
   const Action = ({ icon, label, onClick, danger }) => (
     <button onClick={onClick} style={{
@@ -404,14 +407,14 @@ const EmptyItemSheet = ({ item, hid, onClose, onEdit }) => {
           }}>{item.emoji || '⚠️'}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: pal.danger, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-              Agotado
+              {t('inventory.soldOut.badge')}
             </div>
             <div style={{ fontFamily: fonts.display, fontSize: 17, fontWeight: 700, color: pal.ink }}>{item.name}</div>
           </div>
         </div>
-        <Action icon="🛒" label="Añadir a la lista de la compra" onClick={handleAddToShopping} />
-        <Action icon="✏️" label="Editar / reponer" onClick={onEdit} />
-        <Action icon="🗑" label="Eliminar del inventario" onClick={handleDelete} danger />
+        <Action icon="🛒" label={t('inventory.soldOut.addToShopping')} onClick={handleAddToShopping} />
+        <Action icon="✏️" label={t('inventory.soldOut.editRestock')} onClick={onEdit} />
+        <Action icon="🗑" label={t('inventory.soldOut.removeFromInventory')} onClick={handleDelete} danger />
         <div style={{ height: 16 }}/>
       </div>
     </div>
@@ -427,7 +430,7 @@ const ItemRow = ({ item, empty, categories, onClick }) => {
   const frozen = exp.state === 'frozen';
   const expiresLabel = exp.label;
   const qtyVal = item.type === 'continuous' ? item.fill : item.qty;
-  const qtyDisplay = item.type === 'continuous' ? `${qtyVal ?? 0}%` : `${qtyVal ?? 0} ${item.unit || ''}`.trim();
+  const qtyDisplay = item.type === 'continuous' ? `${qtyVal ?? 0}%` : `${qtyVal ?? 0} ${unitLabel(item.unit)}`.trim();
   return (
     <div onClick={onClick} style={{
       display: 'flex', alignItems: 'center', gap: 12,

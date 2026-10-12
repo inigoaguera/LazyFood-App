@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { fmtDate } from '../i18n/index.js';
+import { fmtDate, errMsg } from '../i18n/index.js';
+import { locLabel, typeLabel, shapeLabel, unitLabel } from '../i18n/labels.js';
 import { useLF, haptic } from '../components/ctx.js';
 import { useCategories } from '../util/categories.js';
 import { LF_SHADOWS } from '../tokens/palettes.js';
@@ -9,7 +10,7 @@ import { create as resourceCreate, patch as resourcePatch, remove as resourceRem
 import { suggestedExpiresAt, daysToTs, expiryStatus, DAY_MS } from '../util/expires.js';
 
 export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex = 50 }) {
-  const { pal, fonts, settings, currentHouseholdMeta } = useLF();
+  const { pal, fonts, settings, currentHouseholdMeta, t } = useLF();
   const hid = currentHouseholdMeta?.id;
   const allCategories = useCategories(hid);
   const variant = settings.gaugeVariant || 'bottle';
@@ -35,8 +36,8 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
   const update = (k, v) => setData((d) => ({ ...d, [k]: v }));
 
   const save = async () => {
-    if (!data.name.trim()) { toast('Pon un nombre primero', 'error'); return; }
-    if (!hid) { toast('Sin casa activa', 'error'); return; }
+    if (!data.name.trim()) { toast(t('inventory.edit.nameFirst'), 'error'); return; }
+    if (!hid) { toast(t('inventory.edit.noHousehold'), 'error'); return; }
     const payload = { ...data };
     if (payload.type === 'continuous') delete payload.qty; else delete payload.fill;
     // Eliminamos campos de cache local que no son del backend
@@ -48,16 +49,16 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
       if (item?.id) {
         await resourcePatch('items', hid, item.id, payload);
         savedItem = { ...item, ...payload };
-        toast('Cambios guardados');
+        toast(t('common.changesSaved'));
       } else {
         const { id: _, ...toSave } = payload;
         savedItem = await resourceCreate('items', hid, toSave);
-        toast(`${data.name} añadido`);
+        toast(t('inventory.edit.added', { name: data.name }));
       }
       haptic(15);
       onSaved?.(savedItem);
     } catch (e) {
-      toast(e?.message || 'No se pudo guardar', 'error');
+      toast(errMsg(e, 'inventory.edit.saveFailed'), 'error');
     }
   };
 
@@ -71,7 +72,7 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
     const now = Date.now();
     update('openedAt', now);
     update('expiresAt', suggestedExpiresAt(data.cat, data.loc, now, now));
-    toast('Caducidad arrancada desde hoy');
+    toast(t('inventory.edit.expiryStarted'));
   };
 
   const expState = expiryStatus(data);
@@ -80,9 +81,9 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
     if (!item?.id || !hid) return;
     try {
       await resourceRemove('items', hid, item.id);
-      toast(`${item.name} eliminado`);
+      toast(t('inventory.toast.removed', { name: item.name }));
       onClose();
-    } catch (e) { toast(e?.message || 'Error', 'error'); }
+    } catch (e) { toast(errMsg(e), 'error'); }
   };
 
   return (
@@ -101,16 +102,16 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
           <div style={{ width: 40, height: 4, borderRadius: 2, background: pal.lineStrong }}/>
         </div>
         <div style={{ padding: '4px 20px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer', padding: 0 }}>Cancelar</button>
-          <div style={{ fontFamily: fonts.body, fontSize: 15, fontWeight: 600 }}>{item ? 'Editar' : 'Añadir'}</div>
-          <button onClick={save} style={{ background: 'transparent', border: 'none', color: pal.primary, fontSize: 14, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Guardar</button>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: pal.inkSoft, fontSize: 14, cursor: 'pointer', padding: 0 }}>{t('common.cancel')}</button>
+          <div style={{ fontFamily: fonts.body, fontSize: 15, fontWeight: 600 }}>{item ? t('common.edit') : t('common.add')}</div>
+          <button onClick={save} style={{ background: 'transparent', border: 'none', color: pal.primary, fontSize: 14, fontWeight: 700, cursor: 'pointer', padding: 0 }}>{t('common.save')}</button>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 40px' }}>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 18 }}>
             <EmojiPicker emoji={data.emoji} onChange={(e) => update('emoji', e)} />
             <input value={data.name} onChange={(e) => update('name', e.target.value)}
-              placeholder="Nombre del alimento"
+              placeholder={t('inventory.edit.namePlaceholder')}
               style={{
                 flex: 1, border: 'none', background: pal.surface,
                 borderRadius: 14, padding: '14px 16px', fontSize: 17, fontWeight: 600,
@@ -120,21 +121,21 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
           </div>
 
           <div style={{ marginBottom: 20 }}>
-            <SectionLabel>Cantidad</SectionLabel>
+            <SectionLabel>{t('inventory.edit.quantity')}</SectionLabel>
             <Card style={{ padding: 0, overflow: 'hidden' }}>
               <div style={{ display: 'flex', padding: 6, gap: 4, background: pal.bg }}>
                 {[
-                  { id: 'continuous', label: '📏 Continuo', sub: 'arroz, leche, aceite…' },
-                  { id: 'discrete',   label: '🔢 Unidades', sub: 'huevos, tomates…' },
-                ].map((t) => (
-                  <button key={t.id} onClick={() => update('type', t.id)} style={{
+                  { id: 'continuous', label: `📏 ${typeLabel('continuous')}`, sub: t('inventory.edit.continuousSub') },
+                  { id: 'discrete',   label: `🔢 ${typeLabel('discrete')}`,   sub: t('inventory.edit.discreteSub') },
+                ].map((ty) => (
+                  <button key={ty.id} onClick={() => update('type', ty.id)} style={{
                     flex: 1, padding: '10px 12px', borderRadius: 12,
-                    background: data.type === t.id ? pal.surface : 'transparent',
+                    background: data.type === ty.id ? pal.surface : 'transparent',
                     border: 'none', cursor: 'pointer', textAlign: 'left',
-                    boxShadow: data.type === t.id ? LF_SHADOWS.sm : 'none',
+                    boxShadow: data.type === ty.id ? LF_SHADOWS.sm : 'none',
                   }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: pal.ink }}>{t.label}</div>
-                    <div style={{ fontSize: 10, color: pal.inkFaint, marginTop: 2 }}>{t.sub}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: pal.ink }}>{ty.label}</div>
+                    <div style={{ fontSize: 10, color: pal.inkFaint, marginTop: 2 }}>{ty.sub}</div>
                   </button>
                 ))}
               </div>
@@ -155,12 +156,12 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
             </Card>
           </div>
 
-          <SectionLabel>Ubicación</SectionLabel>
+          <SectionLabel>{t('inventory.edit.location')}</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 18 }}>
             {[
-              { id: 'fridge',  label: 'Nevera',     emoji: '🧊', color: pal.fridge },
-              { id: 'freezer', label: 'Congelador', emoji: '❄️', color: pal.freezer },
-              { id: 'pantry',  label: 'Despensa',   emoji: '🫙', color: pal.pantry },
+              { id: 'fridge',  label: locLabel('fridge'),  emoji: '🧊', color: pal.fridge },
+              { id: 'freezer', label: locLabel('freezer'), emoji: '❄️', color: pal.freezer },
+              { id: 'pantry',  label: locLabel('pantry'),  emoji: '🫙', color: pal.pantry },
             ].map((l) => (
               <button key={l.id} onClick={() => update('loc', l.id)} style={{
                 padding: '14px 8px', borderRadius: 14,
@@ -174,20 +175,20 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
             ))}
           </div>
 
-          <SectionLabel>Categoría</SectionLabel>
+          <SectionLabel>{t('inventory.edit.category')}</SectionLabel>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 18 }}>
             {allCategories.map((c) => (
               <Chip key={c.id} label={c.label} color={c.color} active={data.cat === c.id} onClick={() => update('cat', c.id)} />
             ))}
           </div>
 
-          <SectionLabel>Caduca</SectionLabel>
+          <SectionLabel>{t('inventory.edit.expires')}</SectionLabel>
           <Card>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <LFIcon name="calendar" size={20} color={pal.primary} />
                 <span style={{ fontSize: 14, color: pal.ink, fontWeight: 600 }}>
-                  {data.frozenAt != null ? '🧊 congelado' : expState.label}
+                  {data.frozenAt != null ? `🧊 ${t('domain.expiry.frozen')}` : expState.label}
                 </span>
               </div>
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -213,12 +214,12 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
                 background: pal.primarySoft, color: pal.primary, border: 'none',
                 fontSize: 12, fontWeight: 700, cursor: 'pointer',
               }}>
-                📦 Abrir — arranca el contador de caducidad
+                {t('inventory.edit.open')}
               </button>
             )}
             {data.openedAt && (
               <div style={{ marginTop: 8, fontSize: 11, color: pal.inkSoft }}>
-                Abierto el {fmtDate(data.openedAt, { day: 'numeric', month: 'short' })}
+                {t('inventory.edit.openedOn', { date: fmtDate(data.openedAt, { day: 'numeric', month: 'short' }) })}
               </div>
             )}
           </Card>
@@ -229,7 +230,7 @@ export default function AddEditModal({ item, defaults, onClose, onSaved, zIndex 
               background: 'transparent', border: `1px solid ${pal.dangerSoft}`,
               borderRadius: 14, color: pal.danger, fontSize: 14, fontWeight: 600,
               cursor: 'pointer',
-            }}>Eliminar alimento</button>
+            }}>{t('inventory.edit.deleteItem')}</button>
           )}
         </div>
       </div>
@@ -290,7 +291,7 @@ const UnitPicker = ({ units, value, onChange }) => {
           background: value === u ? pal.ink : pal.bg,
           color: value === u ? pal.bg : pal.inkSoft,
           border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-        }}>{u}</button>
+        }}>{unitLabel(u)}</button>
       ))}
     </div>
   );
@@ -299,9 +300,9 @@ const UnitPicker = ({ units, value, onChange }) => {
 const ShapePicker = ({ value, onChange }) => {
   const { pal } = useLF();
   const SHAPES = [
-    { id: 'bottle', label: 'Botella', icon: 'M9 2h6v3c0 1 2 1 2 4v12a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9c0-3 2-3 2-4z' },
-    { id: 'jar',    label: 'Tarro',   icon: 'M5 4h14v3h-1v13a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7H5z' },
-    { id: 'sack',   label: 'Saco',    icon: 'M7 5l-1-2h12l-1 2 2 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8z' },
+    { id: 'bottle', icon: 'M9 2h6v3c0 1 2 1 2 4v12a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9c0-3 2-3 2-4z' },
+    { id: 'jar',    icon: 'M5 4h14v3h-1v13a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7H5z' },
+    { id: 'sack',   icon: 'M7 5l-1-2h12l-1 2 2 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8z' },
   ];
   return (
     <div style={{ display: 'flex', gap: 6, marginBottom: 14, padding: 4, background: pal.bg, borderRadius: 12 }}>
@@ -319,7 +320,7 @@ const ShapePicker = ({ value, onChange }) => {
               stroke={active ? pal.primary : pal.inkSoft} strokeWidth="1.8" strokeLinejoin="round">
               <path d={s.icon} />
             </svg>
-            <span style={{ fontSize: 11, fontWeight: 600, color: active ? pal.ink : pal.inkSoft }}>{s.label}</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: active ? pal.ink : pal.inkSoft }}>{shapeLabel(s.id)}</span>
           </button>
         );
       })}
@@ -334,7 +335,7 @@ const SILHOUETTES = {
 };
 
 const LiquidGauge = ({ value, onChange, unit, variant = 'bottle' }) => {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const ref = useRef(null);
   const [dragging, setDragging] = useState(false);
   const sil = SILHOUETTES[variant] || SILHOUETTES.bottle;
@@ -401,13 +402,13 @@ const LiquidGauge = ({ value, onChange, unit, variant = 'bottle' }) => {
           color: pal.ink, lineHeight: 1, letterSpacing: '-0.03em',
         }}>{value}<span style={{ fontSize: 24, color: pal.inkSoft, fontWeight: 600 }}>%</span></div>
         <div style={{ fontSize: 13, color: pal.inkSoft, marginTop: 4 }}>
-          Aprox. {Math.round(value * 0.01 * 100) / 100} {unit}
+          {t('inventory.edit.approx', { amount: Math.round(value * 0.01 * 100) / 100, unit: unitLabel(unit) })}
         </div>
         <div style={{
           marginTop: 14, padding: 10, background: pal.primarySoft, borderRadius: 10,
           fontSize: 11, color: pal.primary, lineHeight: 1.4,
         }}>
-          💡 Desliza sobre el envase para marcar cuánto queda
+          {t('inventory.edit.gaugeHint')}
         </div>
         <div style={{ marginTop: 10, display: 'flex', gap: 4 }}>
           {[0, 25, 50, 75, 100].map((v) => (
@@ -428,7 +429,7 @@ const LiquidGauge = ({ value, onChange, unit, variant = 'bottle' }) => {
 // items discretos divisibles (huevos por mitades, latas por cuartos…).
 // Doble pulsación rápida en + o − activa el paso fino en esa pulsación.
 const Stepper = ({ value, onChange, unit }) => {
-  const { pal, fonts } = useLF();
+  const { pal, fonts, t } = useLF();
   const [fineMode, setFineMode] = React.useState(false);
   const step = fineMode ? 0.25 : 1;
   // Mostramos enteros sin decimales, fracciones con 2 decimales.
@@ -445,7 +446,7 @@ const Stepper = ({ value, onChange, unit }) => {
         </button>
         <div style={{ textAlign: 'center', minWidth: 140 }}>
           <div style={{ fontFamily: fonts.display, fontSize: 62, fontWeight: 800, color: pal.ink, lineHeight: 1, letterSpacing: '-0.03em' }}>{display}</div>
-          <div style={{ fontSize: 13, color: pal.inkSoft, marginTop: 2 }}>{unit}</div>
+          <div style={{ fontSize: 13, color: pal.inkSoft, marginTop: 2 }}>{unitLabel(unit)}</div>
         </div>
         <button onClick={() => { haptic(); onChange(+(value + step).toFixed(2)); }} style={{
           width: 56, height: 56, borderRadius: 28,
@@ -463,7 +464,7 @@ const Stepper = ({ value, onChange, unit }) => {
         border: `0.5px solid ${fineMode ? pal.primary : pal.line}`,
         fontSize: 11, fontWeight: 600, cursor: 'pointer',
       }}>
-        {fineMode ? '🔬 paso 0.25' : 'paso 1 · toca para 0.25'}
+        {fineMode ? t('inventory.step.fine') : t('inventory.step.normal')}
       </button>
     </div>
   );

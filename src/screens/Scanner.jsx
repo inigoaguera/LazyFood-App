@@ -8,6 +8,7 @@ import { create as resourceCreate } from '../api/resources.js';
 import { localISODate } from '../util/date.js';
 import { daysToTs, suggestedExpiresAt } from '../util/expires.js';
 import { makeLine, linesTotal } from '../util/expenseLines.js';
+import { locLabel, shapeLabel, unitLabel } from '../i18n/labels.js';
 
 const SCAN_CATS = ['lacteo', 'verdura', 'fruta', 'carne', 'pescado', 'pasta', 'conserva', 'salsa', 'especia', 'bebida', 'snack', 'congelado'];
 const normalizeCat = (c) => (SCAN_CATS.includes(c) ? c : 'conserva');
@@ -25,7 +26,7 @@ function normalizeScanDate(raw) {
 }
 
 export default function Scanner({ onBack, onDone }) {
-  const { pal, fonts, currentHouseholdMeta } = useLF();
+  const { pal, fonts, currentHouseholdMeta, t } = useLF();
   const hid = currentHouseholdMeta?.id;
   const [phase, setPhase] = useState('camera'); // camera | scanning | results | error
   const [stream, setStream] = useState(null);
@@ -93,7 +94,7 @@ export default function Scanner({ onBack, onDone }) {
           videoRef.current.play().catch(() => {});
         }
       } catch (e) {
-        setErrorMsg('No he podido acceder a la cámara. Revisa permisos o sube una foto.');
+        setErrorMsg(t('scanner.camera.noAccess'));
       }
     })();
     return () => {
@@ -122,7 +123,7 @@ export default function Scanner({ onBack, onDone }) {
 
   const handleScan = async (dataUrl) => {
     if (!proxyConfigured()) {
-      toast('Configura VITE_API_PROXY_URL para usar el scanner', 'error');
+      toast(t('scanner.noProxy'), 'error');
       setPhase('camera');
       return;
     }
@@ -138,7 +139,7 @@ export default function Scanner({ onBack, onDone }) {
         const unit = it.unit || (type === 'continuous' ? 'L' : 'uds');
         return {
           ...it,
-          type, shape, unit,
+          type, shape, unit, // i18n-ignore
           loc: ['fridge', 'freezer', 'pantry'].includes(it.loc) ? it.loc : 'pantry',
           // null válido para conservas, especias, etc.
           expiresAt: it.expiresInDays == null ? null : daysToTs(it.expiresInDays),
@@ -153,7 +154,7 @@ export default function Scanner({ onBack, onDone }) {
       });
       setPhase('results');
     } catch (e) {
-      toast('No he podido leer el ticket', 'error');
+      toast(t('scanner.readFailed'), 'error');
       setPhase('camera');
     }
   };
@@ -170,7 +171,7 @@ export default function Scanner({ onBack, onDone }) {
   const onShutter = () => {
     haptic(15);
     const url = captureFromVideo();
-    if (!url) { toast('Cámara aún no lista'); return; }
+    if (!url) { toast(t('scanner.camera.notReady')); return; }
     stopStream();
     handleScan(url);
   };
@@ -189,7 +190,7 @@ export default function Scanner({ onBack, onDone }) {
   };
 
   const commit = async () => {
-    if (!hid) { toast('Sin casa activa', 'error'); return; }
+    if (!hid) { toast(t('scanner.noHousehold'), 'error'); return; }
     let expenseId = null;
     // Si hay total, creamos primero el expense para poder vincular los items.
     // Las líneas se congelan DENTRO del gasto: a partir de aquí el registro de la
@@ -199,7 +200,7 @@ export default function Scanner({ onBack, onDone }) {
         const exp = await resourceCreate('expenses', hid, {
           date: meta.date || localISODate(),
           amount: effectiveTotal,
-          store: meta.store || 'Supermercado',
+          store: meta.store || t('scanner.defaultStore'),
           cat: 'super',
           savedOnDiscounts: meta.savedOnDiscounts != null ? Number(meta.savedOnDiscounts) : null,
           items: lines,
@@ -227,7 +228,7 @@ export default function Scanner({ onBack, onDone }) {
         added++;
       } catch (e) { /* sigue con el siguiente */ }
     }
-    toast(`${added} items añadidos${expenseId ? ' y ticket registrado' : ''}`);
+    toast(t(expenseId ? 'scanner.addedWithReceipt' : 'scanner.added', { n: added }));
     onDone?.();
   };
 
@@ -266,7 +267,7 @@ export default function Scanner({ onBack, onDone }) {
           <div style={{ position: 'absolute', top: 12, left: 12, right: 12, display: 'flex', justifyContent: 'space-between' }}>
             <IconBtn icon="chevronLeft" onClick={() => { stopStream(); onBack?.(); }} tone="soft" />
             <div style={{ padding: '8px 14px', background: 'rgba(0,0,0,0.5)', borderRadius: 20, color: '#fff', fontSize: 12, fontWeight: 600 }}>
-              Encuadra el ticket
+              {t('scanner.camera.frame')}
             </div>
             <IconBtn icon="bolt" tone="soft" />
           </div>
@@ -297,9 +298,9 @@ export default function Scanner({ onBack, onDone }) {
         <div style={{ width: 80, height: 80, borderRadius: 40, background: pal.primarySoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <LFIcon name="sparkle" size={36} color={pal.primary} />
         </div>
-        <div style={{ fontFamily: fonts.display, fontSize: 22, fontWeight: 700, color: pal.ink }}>Leyendo tu ticket…</div>
+        <div style={{ fontFamily: fonts.display, fontSize: 22, fontWeight: 700, color: pal.ink }}>{t('scanner.scanning.title')}</div>
         <div style={{ fontSize: 13, color: pal.inkSoft, textAlign: 'center', padding: '0 40px' }}>
-          Identificando alimentos y categorías con IA. Unos segundos.
+          {t('scanner.scanning.sub')}
         </div>
       </div>
     );
@@ -307,7 +308,7 @@ export default function Scanner({ onBack, onDone }) {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: pal.bg }}>
-      <Header big title={`¡${detected.length} items detectados!`} subtitle="Revisa y ajusta antes de añadir"
+      <Header big title={t('scanner.results.title', { n: detected.length })} subtitle={t('scanner.results.subtitle')}
         left={<IconBtn icon="chevronLeft" onClick={() => setPhase('camera')} />} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px' }}>
         {(meta.store || effectiveTotal != null) && (
@@ -319,16 +320,16 @@ export default function Scanner({ onBack, onDone }) {
               <span style={{ fontSize: 22 }}>🎉</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: pal.primary }}>
-                  {meta.store || 'Supermercado'}{effectiveTotal != null ? ` · ${effectiveTotal.toFixed(2)} €` : ''}
+                  {meta.store || t('scanner.defaultStore')}{effectiveTotal != null ? ` · ${effectiveTotal.toFixed(2)} €` : ''}
                 </div>
                 {totalIsEstimated && (
                   <div style={{ fontSize: 11, color: pal.primary, opacity: 0.8 }}>
-                    No he leído el total en el ticket: lo he sumado de los productos. Puedes corregirlo luego en Gastos.
+                    {t('scanner.results.estimatedTotal')}
                   </div>
                 )}
                 {meta.savedOnDiscounts != null && (
                   <div style={{ fontSize: 11, color: pal.primary, opacity: 0.8 }}>
-                    Ahorraste {Number(meta.savedOnDiscounts).toFixed(2)} € con ofertas
+                    {t('scanner.results.saved', { amount: Number(meta.savedOnDiscounts).toFixed(2) })}
                   </div>
                 )}
               </div>
@@ -340,7 +341,7 @@ export default function Scanner({ onBack, onDone }) {
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: pal.primary, flexShrink: 0 }}>
-                Fecha de la compra
+                {t('scanner.results.purchaseDate')}
               </span>
               <input
                 type="date"
@@ -355,7 +356,7 @@ export default function Scanner({ onBack, onDone }) {
             </div>
             {meta.dateCorrected && (
               <div style={{ fontSize: 11, color: pal.primary, opacity: 0.8, marginTop: 6 }}>
-                La fecha del ticket no me cuadraba, he puesto la de hoy. Cámbiala si la compra fue otro día.
+                {t('scanner.results.dateCorrected')}
               </div>
             )}
           </div>
@@ -368,10 +369,10 @@ export default function Scanner({ onBack, onDone }) {
           }}>
             <span style={{ fontSize: 20 }}>⚠️</span>
             <div style={{ flex: 1, fontSize: 12, color: pal.danger, lineHeight: 1.45 }}>
-              <strong>Las cuentas no me cuadran por {descuadre.diff.toFixed(2)} €.</strong>{' '}
+              <strong>{t('scanner.mismatch.title', { diff: descuadre.diff.toFixed(2) })}</strong>{' '}
               {descuadre.faltan
-                ? 'Los productos suman menos que el total del ticket: puede que me haya dejado alguna línea. Repásalo y añade lo que falte.'
-                : 'Los productos suman más que el total del ticket: puede que haya duplicado una línea o leído mal un precio.'}
+                ? t('scanner.mismatch.less')
+                : t('scanner.mismatch.more')}
             </div>
           </div>
         )}
@@ -381,7 +382,7 @@ export default function Scanner({ onBack, onDone }) {
             background: pal.primarySoft, color: pal.primary,
             border: 'none', borderRadius: 10, padding: '7px 14px',
             fontSize: 12, fontWeight: 700, cursor: 'pointer',
-          }}>+ Añadir producto</button>
+          }}>{t('scanner.results.addProduct')}</button>
         </div>
         {detected.map((d, i) => (
           <ScanItemRow key={i} item={d} pal={pal} fonts={fonts}
@@ -394,13 +395,13 @@ export default function Scanner({ onBack, onDone }) {
         ))}
         {detected.length === 0 && (
           <div style={{ padding: 40, textAlign: 'center', color: pal.inkSoft }}>
-            No detecté items. Prueba con otra foto.
+            {t('scanner.results.none')}
           </div>
         )}
       </div>
       <div style={{ padding: 20 }}>
         <Button tone="green" size="lg" fullWidth onClick={commit} iconRight="check" disabled={!detected.length}>
-          Añadir {detected.length} items
+          {t('scanner.results.addN', { n: detected.length })}
         </Button>
       </div>
     </div>
@@ -409,11 +410,12 @@ export default function Scanner({ onBack, onDone }) {
 
 // ─── Editor por línea del escaneo ────────────────────────────────────
 const ScanItemRow = ({ item, pal, fonts, onChange, onRemove }) => {
+  const { t } = useLF();
   // Las líneas añadidas a mano abren desplegadas: no tienen nada que enseñar
   // plegadas y lo primero que hay que hacer es escribirles el nombre.
   const [open, setOpen] = React.useState(!!item._nuevo);
   const cat = LF_CATEGORIES.find((c) => c.id === item.cat || c.id === item.category) || LF_CATEGORIES[0];
-  const locLabel = { fridge: 'Nevera', freezer: 'Congelador', pantry: 'Despensa' }[item.loc] || 'Despensa';
+  const locName = locLabel(['fridge', 'freezer', 'pantry'].includes(item.loc) ? item.loc : 'pantry');
   return (
     <div style={{
       marginBottom: 8, background: pal.surface, borderRadius: 12,
@@ -429,76 +431,76 @@ const ScanItemRow = ({ item, pal, fonts, onChange, onRemove }) => {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: pal.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
           <div style={{ fontSize: 11, color: pal.inkSoft, marginTop: 2 }}>
-            {item.qty || 1} {item.unit || 'uds'}{item.price != null ? ` · ${Number(item.price).toFixed(2)} €` : ''} · {cat.label} · {locLabel}
+            {item.qty || 1} {unitLabel(item.unit || 'uds')}{item.price != null ? ` · ${Number(item.price).toFixed(2)} €` : ''} · {cat.label} · {locName}
           </div>
         </div>
         <span style={{ fontSize: 14, color: pal.inkFaint, transform: `rotate(${open ? 90 : 0}deg)`, transition: 'transform .15s' }}>›</span>
       </div>
       {open && (
         <div style={{ padding: '0 12px 12px', borderTop: `0.5px solid ${pal.line}` }}>
-          <FieldRow label="Nombre">
+          <FieldRow label={t('scanner.row.name')}>
             <input value={item.name} onChange={(e) => onChange({ name: e.target.value })} style={inputCss(pal)} />
           </FieldRow>
-          <FieldRow label="Tipo de cantidad">
+          <FieldRow label={t('scanner.row.qtyType')}>
             <div style={{ display: 'flex', gap: 6 }}>
               <TypeBtn pal={pal} active={item.type !== 'continuous'} onClick={() => onChange({ type: 'discrete', shape: null, unit: 'uds', fill: null })}>
-                Discreto (uds, latas…)
+                {t('scanner.row.discrete')}
               </TypeBtn>
               <TypeBtn pal={pal} active={item.type === 'continuous'} onClick={() => onChange({ type: 'continuous', shape: item.shape || 'bottle', unit: item.unit && ['L','ml','kg','g'].includes(item.unit) ? item.unit : 'L', fill: 100 })}>
-                Continuo (L, kg…)
+                {t('scanner.row.continuous')}
               </TypeBtn>
             </div>
           </FieldRow>
           {item.type === 'continuous' && (
-            <FieldRow label="Forma del envase">
+            <FieldRow label={t('scanner.row.shape')}>
               <div style={{ display: 'flex', gap: 6 }}>
                 {[
-                  { id: 'bottle', label: '🍶 Botella' },
-                  { id: 'jar', label: '🫙 Tarro' },
-                  { id: 'sack', label: '🛍️ Saco' },
+                  { id: 'bottle', emoji: '🍶' },
+                  { id: 'jar', emoji: '🫙' },
+                  { id: 'sack', emoji: '🛍️' },
                 ].map((s) => (
                   <TypeBtn key={s.id} pal={pal} active={item.shape === s.id} onClick={() => onChange({ shape: s.id })}>
-                    {s.label}
+                    {s.emoji} {shapeLabel(s.id)}
                   </TypeBtn>
                 ))}
               </div>
             </FieldRow>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
-            <FieldRow label="Cantidad" style={{ flex: 1 }}>
+            <FieldRow label={t('scanner.row.qty')} style={{ flex: 1 }}>
               <input type="number" inputMode="decimal" value={item.qty || ''} onChange={(e) => onChange({ qty: Number(e.target.value) || 1 })} style={inputCss(pal)} />
             </FieldRow>
-            <FieldRow label="Unidad" style={{ flex: 1 }}>
+            <FieldRow label={t('scanner.row.unit')} style={{ flex: 1 }}>
               <select value={item.unit || (item.type === 'continuous' ? 'L' : 'uds')} onChange={(e) => onChange({ unit: e.target.value })} style={inputCss(pal)}>
                 {item.type === 'continuous'
-                  ? ['L', 'ml', 'kg', 'g'].map((u) => <option key={u} value={u}>{u}</option>)
-                  : ['uds', 'latas', 'paquetes'].map((u) => <option key={u} value={u}>{u}</option>)}
+                  ? ['L', 'ml', 'kg', 'g'].map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)
+                  : ['uds', 'latas', 'paquetes'].map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
               </select>
             </FieldRow>
-            <FieldRow label="Precio" style={{ flex: 1 }}>
+            <FieldRow label={t('scanner.row.price')} style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', background: pal.bg, border: `1px solid ${pal.line}`, borderRadius: 8, paddingRight: 8 }}>
                 <input type="number" inputMode="decimal" value={item.price ?? ''} onChange={(e) => onChange({ price: e.target.value === '' ? null : Number(e.target.value) })} style={{ flex: 1, padding: 8, fontSize: 13, border: 'none', background: 'transparent', outline: 'none', textAlign: 'right' }} />
                 <span style={{ fontSize: 13, color: pal.inkSoft, fontWeight: 600 }}>€</span>
               </div>
             </FieldRow>
           </div>
-          <FieldRow label="Categoría">
+          <FieldRow label={t('scanner.row.cat')}>
             <select value={item.cat || item.category || cat.id} onChange={(e) => onChange({ cat: e.target.value, category: e.target.value })} style={inputCss(pal)}>
               {LF_CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
           </FieldRow>
           <div style={{ display: 'flex', gap: 8 }}>
-            <FieldRow label="Ubicación" style={{ flex: 1 }}>
+            <FieldRow label={t('scanner.row.loc')} style={{ flex: 1 }}>
               <select value={item.loc || 'pantry'} onChange={(e) => onChange({ loc: e.target.value })} style={inputCss(pal)}>
-                <option value="fridge">Nevera</option>
-                <option value="freezer">Congelador</option>
-                <option value="pantry">Despensa</option>
+                <option value="fridge">{locLabel('fridge')}</option>
+                <option value="freezer">{locLabel('freezer')}</option>
+                <option value="pantry">{locLabel('pantry')}</option>
               </select>
             </FieldRow>
-            <FieldRow label="Caduca en (días)" style={{ flex: 1 }}>
+            <FieldRow label={t('scanner.row.expiresIn')} style={{ flex: 1 }}>
               <input type="number" inputMode="numeric"
                 value={item.expiresAt == null ? '' : Math.max(0, Math.ceil((item.expiresAt - Date.now()) / 86400000))}
-                placeholder="— sin caducidad"
+                placeholder={t('scanner.row.noExpiry')}
                 onChange={(e) => onChange({
                   expiresAt: e.target.value === '' ? null : (Date.now() + Number(e.target.value) * 86400000),
                 })}
@@ -509,7 +511,7 @@ const ScanItemRow = ({ item, pal, fonts, onChange, onRemove }) => {
             width: '100%', marginTop: 8, padding: 10,
             background: pal.dangerSoft, border: 'none', borderRadius: 10,
             color: pal.danger, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-          }}>🗑 Quitar este item</button>
+          }}>{t('scanner.row.remove')}</button>
         </div>
       )}
     </div>
