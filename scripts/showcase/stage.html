@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>LazyFood showcase</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800;9..144,900&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=block" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F5F1E8; --surface: #FFFCF4; --ink: #1F2A1C; --inkSoft: #5C6B55; --inkFaint: #9AA695;
+    --primary: #4A7C3A; --primarySoft: #DCE8D0; --accent: #E8A838; --accentSoft: #F9E6BF;
+    --danger: #C6513A; --dangerSoft: #F5D8CF; --cool: #7FB0C4; --coolSoft: #D9E9EF;
+    --display: 'Fraunces', Georgia, serif; --body: 'DM Sans', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+  body { font-family: var(--body); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+  .abs { position: absolute; left: 0; top: 0; }
+  .layer { position: absolute; inset: 0; }
+
+  /* Fondo */
+  #bgWipe { will-change: clip-path; }
+  .blob { position: absolute; width: 1100px; height: 1100px; border-radius: 50%; left: 0; top: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.16) 38%, rgba(255,255,255,0) 68%); }
+  #grain { opacity: 0.07; mix-blend-mode: multiply; background-size: 256px 256px; }
+
+  /* Emojis decorativos */
+  .emo { position: absolute; left: 0; top: 0; font-family: 'Noto Color Emoji', sans-serif; line-height: 1;
+    transform-origin: 50% 50%; filter: drop-shadow(0 14px 18px rgba(31,42,28,0.18)); }
+
+  /* Móvil */
+  .phone { position: absolute; left: 0; top: 0; width: 418px; height: 872px; transform-origin: 50% 50%; }
+  .bezel { position: absolute; inset: 0; border-radius: 66px; background: linear-gradient(145deg, #2c3328 0%, #11150f 55%, #262c22 100%);
+    padding: 14px; box-shadow: 0 60px 110px -30px rgba(31,42,28,0.55), 0 30px 50px -30px rgba(31,42,28,0.45), inset 0 0 0 1.5px rgba(255,255,255,0.10); }
+  .bezel::after { content: ''; position: absolute; inset: 5px; border-radius: 61px; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.06); pointer-events: none; }
+  .btn { position: absolute; width: 4px; border-radius: 2px; background: #1b2018; }
+  .screen { position: absolute; left: 14px; top: 14px; width: 390px; height: 844px; border-radius: 52px; overflow: hidden; background: var(--bg); isolation: isolate; }
+  .status { position: absolute; left: 0; top: 0; width: 390px; height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 6px 30px 0 40px; font: 600 16px var(--body); letter-spacing: -0.01em; z-index: 3; }
+  .status .icons { display: flex; gap: 6px; align-items: center; }
+  .island { position: absolute; left: 50%; top: 11px; width: 122px; height: 35px; margin-left: -61px; border-radius: 18px; background: #050605; z-index: 5; }
+  .app { position: absolute; left: 0; top: 44px; width: 390px; height: 800px; object-fit: cover; z-index: 1; }
+  .appB { z-index: 2; }
+  .homebar { position: absolute; left: 50%; bottom: 8px; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; z-index: 6; }
+  .tap { position: absolute; left: 0; top: 0; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%; z-index: 7;
+    background: rgba(255,255,255,0.55); border: 2.5px solid rgba(31,42,28,0.45); box-shadow: 0 4px 14px rgba(31,42,28,0.25); opacity: 0; }
+  .ring { position: absolute; left: 0; top: 0; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%; z-index: 7;
+    border: 3px solid rgba(255,255,255,0.9); opacity: 0; }
+  .glare { position: absolute; inset: 0; z-index: 8; pointer-events: none; border-radius: 52px;
+    background: linear-gradient(115deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0) 32%); }
+  .label { position: absolute; left: 0; top: 0; white-space: nowrap; }
+
+  /* Textos */
+  .tblock { position: absolute; left: 0; top: 0; width: 780px; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 10px; padding: 10px 20px 10px 16px; border-radius: 30px;
+    background: rgba(255,252,244,0.85); color: var(--primary); font: 700 22px var(--body); letter-spacing: 0.06em; text-transform: uppercase;
+    box-shadow: 0 1px 2px rgba(30,40,25,0.06), 0 0 0 0.5px rgba(30,40,25,0.05); }
+  .eyebrow .em { font-family: 'Noto Color Emoji'; font-size: 24px; letter-spacing: 0; }
+  .title { margin: 26px 0 0; font: 700 96px/1.0 var(--display); font-variation-settings: 'opsz' 144; letter-spacing: -0.03em; color: var(--ink); }
+  .line { display: block; overflow: hidden; padding: 0.04em 0 0.12em; margin-bottom: -0.1em; }
+  .line > .in { display: inline-block; will-change: transform; }
+  .hl { position: relative; color: var(--primary); white-space: nowrap; }
+  .hl .mk { position: absolute; left: -0.06em; right: -0.06em; bottom: 0.06em; height: 0.3em; border-radius: 0.12em; background: var(--accent); opacity: 0.42; z-index: -1; transform-origin: 0 50%; }
+  .sub { margin-top: 26px; font: 500 34px/1.32 var(--body); color: var(--inkSoft); max-width: 700px; }
+  .center { text-align: center; }
+
+  /* Tarjetas flotantes (como las de la app) */
+  .call { position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 12px; white-space: nowrap;
+    padding: 16px 24px 16px 18px; border-radius: 22px; background: var(--surface); color: var(--ink); font: 700 25px var(--body);
+    box-shadow: 0 20px 40px -12px rgba(30,40,25,0.30), 0 0 0 0.5px rgba(30,40,25,0.08); }
+  .call .em { font-family: 'Noto Color Emoji'; font-size: 30px; }
+  .call .small { display: block; font: 500 19px var(--body); color: var(--inkSoft); margin-top: 2px; }
+  .call.danger { background: var(--dangerSoft); color: var(--danger); }
+  .call.green { background: var(--primarySoft); color: var(--primary); }
+  .call.accent { background: var(--accentSoft); color: #9a6a12; }
+  .call.cool { background: var(--coolSoft); color: #3f7488; }
+  .call.dark { background: var(--ink); color: var(--bg); }
+  .call.bubble { border-radius: 26px 26px 6px 26px; background: var(--primary); color: #fff; font: 600 26px var(--body); }
+
+  /* Logo (como el icono de la app) */
+  .icon { position: absolute; width: 200px; height: 200px; border-radius: 48px; background: var(--primary);
+    box-shadow: 0 30px 60px -20px rgba(31,42,28,0.45), inset 0 0 0 1px rgba(255,255,255,0.08); }
+  .icon .flesh { position: absolute; left: 50%; top: 50%; width: 136px; height: 136px; margin: -68px 0 0 -68px; border-radius: 50%; background: var(--primarySoft); }
+  .icon .seed { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; background: var(--ink); }
+  .word { position: absolute; font: 900 176px/1 var(--display); font-variation-settings: 'opsz' 144; letter-spacing: -0.035em; white-space: nowrap; }
+  .word span { display: inline-block; }
+  .tag { position: absolute; font: 500 46px var(--body); color: var(--inkSoft); white-space: nowrap; }
+  .url { position: absolute; display: inline-flex; align-items: center; gap: 12px; padding: 18px 34px; border-radius: 40px; font: 700 34px var(--body); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="layer" id="bgBase"></div>
+  <div class="layer" id="bgWipe"></div>
+  <div class="layer" id="blobs"></div>
+  <div class="layer" id="grain"></div>
+  <div class="layer" id="back"></div>   <!-- emojis por detrás -->
+  <div class="layer" id="phones"></div>
+  <div class="layer" id="front"></div>  <!-- textos, tarjetas, emojis por delante -->
+</div>
+<script src="stage.js"></script>
+</body>
+</html>
