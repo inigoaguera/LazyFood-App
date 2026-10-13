@@ -4,6 +4,8 @@ Family PWA for managing the fridge, recipes, shopping list, and grocery expenses
 
 Production app: https://lazyfood.pages.dev
 
+Showcase video (≈50 s, no audio, app in English): [16:9](docs/showcase/lazyfood-showcase.mp4) · [9:16](docs/showcase/lazyfood-showcase-vertical.mp4). Both are generated from the real app against a mocked backend; see [`scripts/showcase/`](scripts/showcase/README.md) to regenerate them.
+
 ## Stack
 
 - **Frontend**: React 18, Vite, `vite-plugin-pwa` (Workbox), Dexie.js (IndexedDB) as local cache, inline CSS, no framework.
