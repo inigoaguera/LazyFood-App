@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>LazyFood showcase</title>
@@ -13,9 +13,9 @@
     --display: 'Fraunces', Georgia, serif; --body: 'DM Sans', system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+  html, body { margin: 0; width: var(--W, 1920px); height: var(--H, 1080px); overflow: hidden; background: var(--bg); }
   body { font-family: var(--body); color: var(--ink); -webkit-font-smoothing: antialiased; }
-  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+  #stage { position: relative; width: var(--W, 1920px); height: var(--H, 1080px); overflow: hidden; }
   .abs { position: absolute; left: 0; top: 0; }
   .layer { position: absolute; inset: 0; }
 
@@ -63,6 +63,7 @@
   .hl .mk { position: absolute; left: -0.06em; right: -0.06em; bottom: 0.06em; height: 0.3em; border-radius: 0.12em; background: var(--accent); opacity: 0.42; z-index: -1; transform-origin: 0 50%; }
   .sub { margin-top: 26px; font: 500 34px/1.32 var(--body); color: var(--inkSoft); max-width: 700px; }
   .center { text-align: center; }
+  .center .sub { margin-left: auto; margin-right: auto; }
 
   /* Tarjetas flotantes (como las de la app) */
   .call { position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 12px; white-space: nowrap;

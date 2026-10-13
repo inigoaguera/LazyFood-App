@@ -1,8 +1,9 @@
 // Compone el vídeo: pinta stage.html fotograma a fotograma (el tiempo lo pone
 // este script, no el reloj) y se los pasa a ffmpeg. Sin audio.
-//   node scripts/showcase/render.mjs                         → docs/showcase/lazyfood-showcase.mp4
+//   node scripts/showcase/render.mjs                         → docs/showcase/lazyfood-showcase.mp4 (1920×1080)
+//   node scripts/showcase/render.mjs --format vertical        → docs/showcase/lazyfood-showcase-vertical.mp4 (1080×1920)
 //   node scripts/showcase/render.mjs --out x.mp4 --fps 30
-//   node scripts/showcase/render.mjs --preview 3.5 12 20.25  → .work/preview_<t>.png
+//   node scripts/showcase/render.mjs --preview 3.5 12 20.25  → .work/preview_<formato>_<t>.png
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -14,8 +15,11 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 
 const args = process.argv.slice(2);
 const opt = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : def; };
-const preview = args.includes('--preview') ? args.slice(args.indexOf('--preview') + 1).map(Number) : null;
-const out = path.resolve(opt('--out', path.join(ROOT, '../../docs/showcase/lazyfood-showcase.mp4')));
+const preview = args.includes('--preview') ? args.slice(args.indexOf('--preview') + 1).filter((a) => !a.startsWith('--') && !Number.isNaN(Number(a))).map(Number) : null;
+const format = opt('--format', 'horizontal');
+if (!['horizontal', 'vertical'].includes(format)) throw new Error(`--format ${format}: usa horizontal o vertical`);
+const size = format === 'vertical' ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 };
+const out = path.resolve(opt('--out', path.join(ROOT, '../../docs/showcase', `lazyfood-showcase${format === 'vertical' ? '-vertical' : ''}.mp4`)));
 const fps = Number(opt('--fps', 60));
 
 // Índice de lo grabado por record.mjs.
@@ -40,9 +44,9 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
 
 const browser = await chromium.launch({ args: ['--font-render-hinting=none'] });
-const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+const page = await browser.newPage({ viewport: size, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
-await page.addInitScript((m) => { window.MANIFEST = m; }, manifest);
+await page.addInitScript(([m, f]) => { window.MANIFEST = m; window.FORMAT = f; }, [manifest, format]);
 await page.goto(`${base}/stage.html`);
 await page.evaluate(() => window.ready);
 const cdp = await page.context().newCDPSession(page);
@@ -51,7 +55,7 @@ const shot = async (format) => Buffer.from((await cdp.send('Page.captureScreensh
 if (preview) {
   for (const t of preview) {
     await page.evaluate((t) => window.renderAt(t), t);
-    fs.writeFileSync(path.join(WORK, `preview_${t}.png`), await shot('png'));
+    fs.writeFileSync(path.join(WORK, `preview_${format}_${t}.png`), await shot('png'));
   }
   console.log(`[render] ${preview.length} capturas en ${WORK}`);
 } else {

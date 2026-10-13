@@ -14,20 +14,20 @@ const DPR = 2;
 export async function launch({ store = buildStore(), prefs, aiDelay } = {}) {
   const browser = await chromium.launch({
     // El formato del <input type=date> sale del idioma del proceso, no del contexto.
-    env: { ...process.env, LANG: 'es_ES.UTF-8', LANGUAGE: 'es' },
+    env: { ...process.env, LANG: 'en_GB.UTF-8', LANGUAGE: 'en' },
     args: [
       '--use-fake-ui-for-media-stream',
       '--use-fake-device-for-media-stream',
       `--use-file-for-fake-video-capture=${WORK}/receipt.y4m`,
       '--font-render-hinting=none',
-      '--lang=es-ES',
+      '--lang=en-GB',
     ],
   });
   // El screencast sale siempre a 1 px por px CSS, así que se graba a 780×1600
   // con zoom 2 en <html>: misma maqueta que un móvil de 390×800, el doble de nítida.
   const context = await browser.newContext({
     viewport: { width: VIEW.width * DPR, height: VIEW.height * DPR }, deviceScaleFactor: 1, hasTouch: true,
-    locale: 'es-ES', timezoneId: 'Europe/Madrid',
+    locale: 'en-GB', timezoneId: 'Europe/Madrid',
     permissions: ['camera'],
   });
   const mock = await installMock(context, { store, prefs, aiDelay });

@@ -52,12 +52,12 @@ if (CLIPS.some(want)) {
 
   if (want('inventory')) { await home(); await record(env, 'inventory', async (h) => {
     await h.wait(400);
-    await h.tapText('Nevera', { exact: true });
+    await h.tapText('Fridge', { exact: true });
     await h.wait(1300);
     await h.scroll(260, 1300);
     await h.wait(300);
     await h.scroll(-260, 800);
-    await h.tap(page.locator('button', { hasText: 'Congelador' }).first());
+    await h.tap(page.locator('button', { hasText: 'Freezer' }).first());
     await h.wait(1400);
   }); }
 
@@ -69,15 +69,15 @@ if (CLIPS.some(want)) {
     await h.wait(2300);
     await h.scroll(520, 1500, [195, 450]);
     await h.wait(400);
-    await h.tapText('Añadir 10 items');
+    await h.tapText('Add 10 items');
     await h.wait(1600);
   }); }
 
   if (want('hub')) { await home(); await record(env, 'hub', async (h) => {
     await h.wait(300);
-    await h.tap(nav('Recetas'));
+    await h.tap(nav('Recipes'));
     await h.wait(900);
-    await h.tapText('Inspírame');
+    await h.tapText('Inspire me');
     await h.wait(2300);
     await h.scroll(430, 1500);
     await h.wait(500);
@@ -86,26 +86,26 @@ if (CLIPS.some(want)) {
   }); }
 
   if (want('detail')) { await home(); await record(env, 'detail', async (h) => {
-    await h.tap(nav('Recetas'));
+    await h.tap(nav('Recipes'));
     await h.wait(700);
-    await h.tapText('Pasta de mamá');
+    await h.tapText("Mum's pasta");
     await h.wait(1200);
     const plus = page.locator('button', { hasText: /^\+$/ }).first();
     await h.tap(plus); await h.wait(350); await h.tap(plus);
     await h.wait(500);
     await h.scroll(330, 1100);
     await h.wait(300);
-    await h.tapText('Reajustar cantidades');
+    await h.tapText('Adjust quantities');
     await h.wait(2000);
   }); }
 
   if (want('chat')) { await home(); await record(env, 'chat', async (h) => {
-    await h.tap(nav('Recetas'));
+    await h.tap(nav('Recipes'));
     await h.wait(700);
-    await h.tapText('¿Antojos?');
+    await h.tapText('Cravings?');
     await h.wait(900);
     await h.tap('textarea');
-    await h.type('textarea', 'Algo calentito y rápido para cenar', 45);
+    await h.type('textarea', 'Something warm and quick for dinner', 45);
     await h.wait(300);
     await h.tap(page.locator('textarea').locator('xpath=following::button[1]'));
     await h.wait(2400);
@@ -115,7 +115,7 @@ if (CLIPS.some(want)) {
 
   if (want('menu')) { await home(); await record(env, 'menu', async (h) => {
     await h.wait(200);
-    await h.tapText('Menú semanal');
+    await h.tapText('Weekly menu');
     await h.wait(1000);
     await h.tapAt(357, 24); // ✨ autoplanificar
     await h.wait(1900);
@@ -125,7 +125,7 @@ if (CLIPS.some(want)) {
 
   if (want('shopping')) { await home(); await record(env, 'shopping', async (h) => {
     await h.wait(200);
-    await h.tapText('Lista compra');
+    await h.tapText('Shopping list');
     await h.wait(1000);
     // Cada producto marcado baja al carro y el siguiente sube a su sitio.
     for (let i = 0; i < 3; i++) { await h.tapAt(43, 197); await h.wait(i < 2 ? 750 : 1300); }
@@ -133,9 +133,9 @@ if (CLIPS.some(want)) {
 
   if (want('expenses')) { await home(); await record(env, 'expenses', async (h) => {
     await h.wait(200);
-    await h.tap(nav('Gastos'));
+    await h.tap(nav('Spending'));
     await h.wait(1500);
-    await h.tap(page.locator('button', { hasText: 'Supermercado' }).first());
+    await h.tap(page.locator('button', { hasText: 'By shop' }).first());
     await h.wait(1300);
     await h.tapAt(352, 26); // calendario
     await h.wait(1700);
@@ -148,12 +148,12 @@ if (want('stills')) {
   const dir = path.join(WORK, 'stills');
   fs.mkdirSync(dir, { recursive: true });
   for (const [palette, font] of [['huerto', 'playful'], ['menta', 'clean'], ['terracota', 'rounded']]) {
-    const e = await launch({ prefs: { palette, font, lang: 'es' } });
+    const e = await launch({ prefs: { palette, font, lang: 'en' } });
     await e.page.waitForTimeout(800);
     await e.page.screenshot({ path: path.join(dir, `home_${palette}.jpg`), type: 'jpeg', quality: 92 });
-    await e.page.getByText('Recetas', { exact: true }).last().click();
+    await e.page.getByText('Recipes', { exact: true }).last().click();
     await e.page.waitForTimeout(600);
-    await e.page.getByText('Inspírame').first().click();
+    await e.page.getByText('Inspire me').first().click();
     await e.page.waitForTimeout(5200); // que se vaya el aviso de "sugerencias actualizadas"
     await e.page.screenshot({ path: path.join(dir, `recipes_${palette}.jpg`), type: 'jpeg', quality: 92 });
     await e.browser.close();
