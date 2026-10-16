@@ -8,6 +8,37 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Intentos fallidos permitidos por código OTP antes de invalidarlo.
 const MAX_OTP_ATTEMPTS = 5;
 
+// Topes diarios de códigos fallidos (tabla auth_failures). Por email frenan el
+// ataque a un correo conocido aunque se cambie de IP: 20 al día son ~7.300 al
+// año contra 1.000.000 de combinaciones. Por IP frenan a quien reparte los
+// intentos entre varios correos. El link del email no pasa por aquí, así que
+// el dueño puede entrar aunque alguien le haya agotado el cupo de códigos.
+const MAX_DAILY_FAILS_EMAIL = 20;
+const MAX_DAILY_FAILS_IP = 50;
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function dailyFails(env, keys) {
+  const { results } = await env.lazyfood_db.prepare(
+    `SELECT key, count FROM auth_failures WHERE day=? AND key IN (${keys.map(() => '?').join(',')})`
+  ).bind(today(), ...keys).all();
+  return Object.fromEntries((results || []).map((r) => [r.key, r.count]));
+}
+
+async function recordFail(env, keys) {
+  const day = today();
+  await env.lazyfood_db.batch([
+    ...keys.map((k) => env.lazyfood_db.prepare(
+      `INSERT INTO auth_failures (key, day, count) VALUES (?, ?, 1)
+       ON CONFLICT(key, day) DO UPDATE SET count = count + 1`
+    ).bind(k, day)),
+    // Limpieza: sólo cuenta el día en curso.
+    env.lazyfood_db.prepare('DELETE FROM auth_failures WHERE day < ?').bind(day),
+  ]);
+}
+
 // Secret ALLOWED_EMAILS: emails separados por comas (o saltos de línea).
 function allowedEmails(env) {
   return new Set(
@@ -77,6 +108,13 @@ export async function authVerify(request, env, cors) {
     // Verifica por código + email (para PWAs en iOS donde el link no se puede usar).
     // Se busca por EMAIL, no por código: filtrando por código, un fallo y un
     // email inexistente son indistinguibles y no hay fila donde contar intentos.
+    const ip = request.headers.get('CF-Connecting-IP');
+    const failKeys = [`email:${emailParam}`, ...(ip ? [`ip:${ip}`] : [])];
+    const fails = await dailyFails(env, failKeys);
+    if ((fails[`email:${emailParam}`] || 0) >= MAX_DAILY_FAILS_EMAIL
+      || (ip && (fails[`ip:${ip}`] || 0) >= MAX_DAILY_FAILS_IP)) {
+      return errorResponse('OTP_DAILY_LOCK', 'Demasiados intentos fallidos hoy. Entra con el link del email o vuelve mañana.', 429, cors);
+    }
     row = await env.lazyfood_db.prepare(
       'SELECT token, email, code, expires_at, used_at, attempts FROM auth_tokens WHERE email=? AND used_at IS NULL ORDER BY expires_at DESC LIMIT 1'
     ).bind(emailParam).first();
@@ -88,6 +126,7 @@ export async function authVerify(request, env, cors) {
         await env.lazyfood_db.prepare(
           'UPDATE auth_tokens SET attempts = attempts + 1 WHERE token=?'
         ).bind(row.token).run();
+        await recordFail(env, failKeys);
         return errorResponse('BAD_TOKEN', 'Código o link incorrecto', 400, cors);
       }
     }

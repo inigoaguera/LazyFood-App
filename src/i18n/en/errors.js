@@ -7,6 +7,7 @@ export default {
     BAD_EMAIL: "That email doesn't look right",
     RATE_LIMIT: 'Too many attempts. Give it a moment.',
     OTP_LOCKED: 'Too many failed attempts. Ask for a new code.',
+    OTP_DAILY_LOCK: 'Too many wrong codes today. Use the link in the email or try again tomorrow.',
     EMAIL_FAIL: "I couldn't send the email",
     BAD_TOKEN: 'Wrong code or link',
     BAD_INPUT: 'The code or the email is missing',

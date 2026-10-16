@@ -11,6 +11,7 @@ export default {
     BAD_EMAIL: 'Ese email no parece válido',
     RATE_LIMIT: 'Demasiados intentos. Espera un momento.',
     OTP_LOCKED: 'Demasiados intentos fallidos. Pide un código nuevo.',
+    OTP_DAILY_LOCK: 'Demasiados códigos fallidos hoy. Entra con el link del email o vuelve mañana.',
     EMAIL_FAIL: 'No he podido enviar el email',
     BAD_TOKEN: 'Código o link incorrecto',
     BAD_INPUT: 'Falta el código o el email',
