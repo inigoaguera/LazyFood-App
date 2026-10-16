@@ -9,6 +9,8 @@ const MAX_PAYLOAD_BYTES = 12 * 1024 * 1024;
 // sola llamada y los pasaba. El timeout está para que una llamada colgada no
 // retenga el Worker indefinidamente, no para cortar generación legítima.
 const UPSTREAM_TIMEOUT_MS = 120_000;
+// Llamadas a /ai por usuario y día (UTC). Sobrescribible con la var AI_DAILY_LIMIT.
+const DEFAULT_AI_DAILY_LIMIT = 100;
 
 // Lista explícita a propósito: con una regla por prefijo ("cualquier cosa que
 // contenga flash") entrarían modelos especializados como -cyber o -image, que
@@ -56,6 +58,19 @@ export async function aiProxy(request, env, cors, auth) {
   const payloadSize = JSON.stringify(body.payload).length;
   if (payloadSize > MAX_PAYLOAD_BYTES) {
     return errorResponse('TOO_LARGE', 'La imagen es demasiado grande', 413, cors);
+  }
+
+  // Tope diario por usuario. Se cuenta antes de llamar a Gemini (también los
+  // intentos fallidos) para que un bucle no pueda saltárselo.
+  const limit = Number(env.AI_DAILY_LIMIT) || DEFAULT_AI_DAILY_LIMIT;
+  const day = new Date().toISOString().slice(0, 10);
+  const usage = await env.lazyfood_db.prepare(
+    `INSERT INTO ai_usage (user_id, day, count) VALUES (?, ?, 1)
+     ON CONFLICT(user_id, day) DO UPDATE SET count = count + 1
+     RETURNING count`
+  ).bind(auth.userId, day).first();
+  if (usage?.count > limit) {
+    return errorResponse('AI_QUOTA', 'Has llegado al límite diario de la IA', 429, cors);
   }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${env.GEMINI_API_KEY}`;

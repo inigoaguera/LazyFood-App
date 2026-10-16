@@ -32,6 +32,7 @@ export default {
     TOO_LARGE: 'The image is too large',
     UPSTREAM: "I couldn't reach the AI",
     AI_TIMEOUT: 'The AI took too long to answer',
+    AI_QUOTA: "You've hit today's AI limit. Come back tomorrow.",
     AI_PARSE: "I couldn't make sense of the AI's answer",
     AI_EMPTY: 'The AI sent back an empty answer',
     NO_HOUSEHOLD_LOCAL: 'No house selected',

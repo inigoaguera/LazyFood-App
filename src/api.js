@@ -123,7 +123,9 @@ async function callAi(payload) {
     // NO se reintenta el 504, que es nuestro propio timeout: repetir una
     // llamada que ya ha tardado dos minutos sólo hace esperar el doble.
     const status = Number(e?.status);
-    const reintentable = (status >= 400 && status < 500) || status === 503;
+    // El tope diario (AI_QUOTA) no depende del modelo: reintentar no sirve.
+    const reintentable = e?.code !== 'AI_QUOTA'
+      && ((status >= 400 && status < 500) || status === 503);
     if (!reintentable) throw e;
     console.warn(`[lazyfood] ${MODEL} falló (${status}), reintento con ${FALLBACK_MODEL}:`, e?.message);
     return api('/ai', { method: 'POST', body: { ...body, model: FALLBACK_MODEL } });

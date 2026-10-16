@@ -5,6 +5,9 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 async function hmacKey(secret) {
+  // Sin esto, un secret ausente firmaría con la cadena "undefined" y cualquiera
+  // podría fabricar tokens válidos.
+  if (!secret) throw new Error('JWT_SECRET no configurado');
   return crypto.subtle.importKey(
     'raw', enc.encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },

@@ -107,7 +107,8 @@ export default {
       return errorResponse('NOT_FOUND', `${m} ${p}`, 404, cors);
     } catch (e) {
       console.error('Worker error:', e);
-      return errorResponse('SERVER_ERROR', String(e?.message || e), 500, cors);
+      // El detalle se queda en el log: puede incluir SQL o rutas internas.
+      return errorResponse('SERVER_ERROR', 'Error interno del servidor', 500, cors);
     }
   },
 };

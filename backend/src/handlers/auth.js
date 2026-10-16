@@ -8,6 +8,13 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Intentos fallidos permitidos por código OTP antes de invalidarlo.
 const MAX_OTP_ATTEMPTS = 5;
 
+// Secret ALLOWED_EMAILS: emails separados por comas (o saltos de línea).
+function allowedEmails(env) {
+  return new Set(
+    (env.ALLOWED_EMAILS || '').split(/[,\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean),
+  );
+}
+
 export async function authRequest(request, env, cors) {
   const body = await safeJson(request);
   const email = (body?.email || '').trim().toLowerCase();
@@ -15,6 +22,14 @@ export async function authRequest(request, env, cors) {
   // cuenta (y con ella sus prefs). Cualquier otro valor cae a castellano.
   const lang = body?.lang === 'en' ? 'en' : 'es';
   if (!EMAIL_RE.test(email)) return errorResponse('BAD_EMAIL', 'Email inválido', 400, cors);
+
+  // Lista blanca: sólo los emails de ALLOWED_EMAILS reciben código. Al resto se
+  // le contesta igual que si se hubiera enviado, para no revelar quién está en
+  // la lista; simplemente no llega nada. Sin el secret, no entra nadie nuevo.
+  if (!allowedEmails(env).has(email)) {
+    if (!env.ALLOWED_EMAILS) console.warn('ALLOWED_EMAILS no configurado: no se envían códigos');
+    return json({ ok: true }, 200, cors);
+  }
 
   // Rate limit anti-spam: máx 10 tokens por email en la última hora.
   const since = now() - 60 * 60 * 1000;

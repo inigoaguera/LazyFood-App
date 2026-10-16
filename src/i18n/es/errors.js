@@ -39,6 +39,7 @@ export default {
     TOO_LARGE: 'La imagen es demasiado grande',
     UPSTREAM: 'No he podido contactar con la IA',
     AI_TIMEOUT: 'La IA ha tardado demasiado en responder',
+    AI_QUOTA: 'Has llegado al límite diario de la IA. Vuelve mañana.',
     AI_PARSE: 'No he entendido la respuesta de la IA',
     AI_EMPTY: 'La IA ha devuelto una respuesta vacía',
     // Locales (sin servidor de por medio)

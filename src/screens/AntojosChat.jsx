@@ -137,9 +137,11 @@ export default function AntojosChat({ onClose, onOpenRecipe, initialPrompt }) {
       // cuando la conexión estaba perfecta.
       const friendly = e?.code === 'AI_PARSE'
         ? t('chat.errParse')
-        : (e?.code === 'RATE_LIMIT' || e?.status === 429 || msg.includes('429'))
-          ? t('chat.errRate')
-          : t('chat.errConnect');
+        : e?.code === 'AI_QUOTA'
+          ? t('errors.code.AI_QUOTA')
+          : (e?.code === 'RATE_LIMIT' || e?.status === 429 || msg.includes('429'))
+            ? t('chat.errRate')
+            : t('chat.errConnect');
       setMessages((m) => [...m, { role: 'ai', text: friendly }]);
     } finally {
       setBusy(false);

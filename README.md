@@ -139,6 +139,7 @@ npm run icons
    wrangler secret put JWT_SECRET             # 32+ bytes random base64
    wrangler secret put BREVO_API_KEY          # xkeysib-... from brevo.com
    wrangler secret put RESEND_FROM_EMAIL      # Brevo-verified email (single sender)
+   wrangler secret put ALLOWED_EMAILS         # comma-separated emails allowed to sign in (unset = nobody new)
    ```
 
 7. Adjust `ALLOWED_ORIGIN` and `APP_URL` in `wrangler.toml` to your real PWA domain.
